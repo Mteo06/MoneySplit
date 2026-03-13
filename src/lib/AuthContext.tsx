@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { auth, db } from "./firebase";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { doc, onSnapshot, setDoc } from "firebase/firestore";
 
 interface AuthContextType {
   user: User | null;
@@ -19,31 +19,44 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setUser(user);
-      if (user) {
-        // Fetch or create user profile
-        const userRef = doc(db, "users", user.uid);
-        const userSnap = await getDoc(userRef);
-        if (userSnap.exists()) {
-          setProfile(userSnap.data());
-        } else {
-          const newProfile = {
-            name: user.displayName || user.email?.split("@")[0] || "User",
-            email: user.email,
-            avatar_url: user.photoURL || null,
-            created_at: new Date().toISOString(),
-          };
-          await setDoc(userRef, newProfile);
-          setProfile(newProfile);
-        }
+    let profileUnsub: (() => void) | null = null;
+
+    const authUnsub = onAuthStateChanged(auth, async (firebaseUser) => {
+      setUser(firebaseUser);
+
+      // Unsubscribe from previous user's profile listener
+      if (profileUnsub) { profileUnsub(); profileUnsub = null; }
+
+      if (firebaseUser) {
+        const userRef = doc(db, "users", firebaseUser.uid);
+
+        // Use onSnapshot so profile updates (avatar, name) are reflected instantly
+        profileUnsub = onSnapshot(userRef, async (snap) => {
+          if (snap.exists()) {
+            setProfile(snap.data());
+          } else {
+            // First-time login — create profile document
+            const newProfile = {
+              name: firebaseUser.displayName || firebaseUser.email?.split("@")[0] || "Utente",
+              email: firebaseUser.email,
+              avatar_url: null,
+              created_at: new Date().toISOString(),
+            };
+            await setDoc(userRef, newProfile);
+            setProfile(newProfile);
+          }
+          setLoading(false);
+        });
       } else {
         setProfile(null);
+        setLoading(false);
       }
-      setLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => {
+      authUnsub();
+      if (profileUnsub) profileUnsub();
+    };
   }, []);
 
   return (

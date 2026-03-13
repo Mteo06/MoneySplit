@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useAuth } from "@/lib/AuthContext";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
 import { Navbar } from "@/components/layout/Navbar";
@@ -9,12 +9,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useParams, useRouter } from "next/navigation";
 import {
   doc, getDoc, getDocs, collection, query, where,
-  onSnapshot, deleteDoc, updateDoc, arrayRemove
+  onSnapshot, deleteDoc, updateDoc, arrayRemove, arrayUnion
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import {
   ArrowLeft, Plus, Receipt, Users, Link as LinkIcon,
-  CheckCircle2, Loader2, Trash2, LogOut, UserMinus, AlertTriangle, ScanLine, X
+  CheckCircle2, Loader2, Trash2, LogOut, UserMinus, AlertTriangle, ScanLine, X, Crown, Camera
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -24,6 +24,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { AddExpenseModal } from "@/components/expenses/AddExpenseModal";
 import { simplifyDebts } from "@/utils/settlementAlgorithm";
+import { compressImageToBase64 } from "@/utils/imageUtils";
 
 const CATEGORY_ICONS: Record<string, string> = {
   Cibo: "🍔", Viaggio: "✈️", Trasporto: "🚗", Alloggio: "🏨",
@@ -50,8 +51,17 @@ export default function GroupDetailPage() {
   const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [receiptToView, setReceiptToView] = useState<string | null>(null);
+  const [memberToPromote, setMemberToPromote] = useState<string | null>(null);
+  const [deleteGroupDialog, setDeleteGroupDialog] = useState(false);
+  const [groupImageLoading, setGroupImageLoading] = useState(false);
+  const groupImageInputRef = useRef<HTMLInputElement>(null);
 
-  const isAdmin = group?.created_by === user?.uid;
+  // Admin = original creator OR member in admin_ids array
+  const isAdmin = group?.created_by === user?.uid ||
+    (group?.admin_ids && group.admin_ids.includes(user?.uid));
+
+  const isMemberAdmin = (uid: string) =>
+    uid === group?.created_by || (group?.admin_ids && group.admin_ids.includes(uid));
 
   const getUserName = (uid: string) => {
     if (uid === user?.uid) return "Tu";
@@ -117,6 +127,74 @@ export default function GroupDetailPage() {
     } catch (err) {
       console.error("Error leaving group:", err);
       setActionLoading(false);
+    }
+  };
+
+  // ─── Promote Member to Admin ───────────────────────────────────────────────
+  const handlePromoteMember = async () => {
+    if (!memberToPromote || !group) return;
+    setActionLoading(true);
+    try {
+      await updateDoc(doc(db, "groups", group.id), {
+        admin_ids: arrayUnion(memberToPromote),
+      });
+      setGroup((prev: any) => ({
+        ...prev,
+        admin_ids: [...(prev.admin_ids || []), memberToPromote],
+      }));
+      setMemberToPromote(null);
+    } catch (err) {
+      console.error("Error promoting member:", err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // ─── Delete Group (admin only) ─────────────────────────────────────────────
+  const handleDeleteGroup = async () => {
+    if (!group) return;
+    setActionLoading(true);
+    try {
+      // 1. Delete all expense_participants for all group expenses
+      const expenseIds = expenses.map(e => e.id);
+      if (expenseIds.length > 0) {
+        const chunks: string[][] = [];
+        for (let i = 0; i < expenseIds.length; i += 10)
+          chunks.push(expenseIds.slice(i, i + 10));
+        for (const chunk of chunks) {
+          const qPart = query(
+            collection(db, "expense_participants"),
+            where("expense_id", "in", chunk)
+          );
+          const pSnap = await getDocs(qPart);
+          await Promise.all(pSnap.docs.map(d => deleteDoc(d.ref)));
+        }
+      }
+      // 2. Delete all expenses
+      await Promise.all(expenses.map(e => deleteDoc(doc(db, "expenses", e.id))));
+      // 3. Delete the group document
+      await deleteDoc(doc(db, "groups", group.id));
+      router.push("/groups");
+    } catch (err) {
+      console.error("Error deleting group:", err);
+      setActionLoading(false);
+    }
+  };
+
+  // ─── Group Image Upload (admin only) ──────────────────────────────────
+  const handleGroupImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !group) return;
+    setGroupImageLoading(true);
+    try {
+      const base64 = await compressImageToBase64(file, 400, 400, 0.8);
+      await updateDoc(doc(db, "groups", group.id), { image_base64: base64 });
+      setGroup((prev: any) => ({ ...prev, image_base64: base64 }));
+    } catch (err) {
+      console.error("Error uploading group image:", err);
+    } finally {
+      setGroupImageLoading(false);
+      if (groupImageInputRef.current) groupImageInputRef.current.value = "";
     }
   };
 
@@ -295,8 +373,39 @@ export default function GroupDetailPage() {
         <div className="relative overflow-hidden bg-card border border-border/60 rounded-3xl shadow-xl shadow-black/5">
           <div className="gradient-hero absolute inset-0 opacity-10" />
           <div className="relative z-10 p-6 flex flex-col sm:flex-row items-center sm:items-start gap-4 text-center sm:text-left">
-            <div className="h-16 w-16 rounded-2xl gradient-primary flex items-center justify-center text-white font-bold text-2xl shadow-lg shadow-primary/30 flex-shrink-0">
-              {group.name.substring(0, 2).toUpperCase()}
+            {/* Group Avatar - clickable for admin to upload image */}
+            <div className="relative group/avatar flex-shrink-0">
+              <div className="h-16 w-16 rounded-2xl overflow-hidden shadow-lg shadow-primary/30">
+                {group.image_base64 ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={group.image_base64} alt={group.name} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full gradient-primary flex items-center justify-center text-white font-bold text-2xl">
+                    {group.name.substring(0, 2).toUpperCase()}
+                  </div>
+                )}
+              </div>
+              {isAdmin && (
+                <>
+                  <button
+                    onClick={() => !groupImageLoading && groupImageInputRef.current?.click()}
+                    className="absolute inset-0 rounded-2xl bg-black/40 opacity-0 group-hover/avatar:opacity-100 transition-opacity flex items-center justify-center"
+                    title="Cambia immagine gruppo"
+                  >
+                    {groupImageLoading
+                      ? <Loader2 className="h-5 w-5 text-white animate-spin" />
+                      : <Camera className="h-5 w-5 text-white" />
+                    }
+                  </button>
+                  <input
+                    ref={groupImageInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="sr-only"
+                    onChange={handleGroupImageChange}
+                  />
+                </>
+              )}
             </div>
             <div className="flex-1">
               <h1 className="text-2xl font-bold text-foreground">{group.name}</h1>
@@ -403,7 +512,7 @@ export default function GroupDetailPage() {
                         {canDelete && (
                           <button
                             onClick={(e) => { e.stopPropagation(); setExpenseToDelete(expense); }}
-                            className="opacity-0 group-hover:opacity-100 p-2 rounded-xl text-muted-foreground hover:text-red-500 hover:bg-red-500/10 transition-all"
+                            className="p-2 rounded-xl text-muted-foreground hover:text-red-500 hover:bg-red-500/10 active:text-red-500 active:bg-red-500/10 transition-all ml-1"
                             title="Elimina spesa"
                           >
                             <Trash2 className="h-4 w-4" />
@@ -500,24 +609,36 @@ export default function GroupDetailPage() {
             {isAdmin && (
               <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/20 rounded-2xl px-4 py-2.5 text-sm text-amber-700">
                 <AlertTriangle className="h-4 w-4 flex-shrink-0" />
-                <p>Sei l'amministratore di questo gruppo. Puoi rimuovere i membri.</p>
+                <p>Puoi rimuovere membri e promuovere altri Admin con 👑</p>
               </div>
             )}
+
+            {/* Delete group — solo admin creatore */}
+            {group.created_by === user?.uid && (
+              <button
+                onClick={() => setDeleteGroupDialog(true)}
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-2xl border border-red-200 bg-red-500/5 text-red-600 hover:bg-red-500/10 text-sm font-medium transition-all"
+              >
+                <Trash2 className="h-4 w-4" />
+                Elimina gruppo
+              </button>
+            )}
+
             <div className="space-y-2">
               {group.members.map((uid: string) => {
                 const isCurrentUser = uid === user?.uid;
                 const memberData = usersMap[uid];
                 const name = isCurrentUser ? "Tu" : (memberData?.name || memberData?.email?.split("@")[0] || "Utente");
                 const email = memberData?.email || "";
-                const initials = name === "Tu" ? "T" : name.charAt(0).toUpperCase();
-                const isMemberAdmin = uid === group.created_by;
+                const memberInitials = name === "Tu" ? "T" : name.charAt(0).toUpperCase();
+                const memberIsAdmin = isMemberAdmin(uid);
 
                 return (
                   <div key={uid} className="bg-card border border-border/60 rounded-2xl p-4 flex items-center gap-3 shadow-sm">
                     <div className={`h-11 w-11 rounded-xl flex items-center justify-center font-bold text-sm flex-shrink-0 ${
                       isCurrentUser ? "gradient-primary text-white shadow-md shadow-primary/30" : "bg-muted text-muted-foreground"
                     }`}>
-                      {initials}
+                      {memberInitials}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
@@ -525,34 +646,47 @@ export default function GroupDetailPage() {
                         {isCurrentUser && (
                           <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium">Tu</span>
                         )}
-                        {isMemberAdmin && (
-                          <span className="text-xs bg-amber-500/10 text-amber-600 px-2 py-0.5 rounded-full font-medium">Admin</span>
+                        {memberIsAdmin && (
+                          <span className="text-xs bg-amber-500/10 text-amber-600 px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
+                            <Crown className="h-3 w-3" /> Admin
+                          </span>
                         )}
                       </div>
                       {email && <p className="text-xs text-muted-foreground truncate">{email}</p>}
                     </div>
 
-                    {/* Admin can remove non-admin members (not themselves) */}
-                    {isAdmin && !isCurrentUser && !isMemberAdmin && (
-                      <button
-                        onClick={() => setMemberToRemove(uid)}
-                        className="p-2 rounded-xl text-muted-foreground hover:text-red-500 hover:bg-red-500/10 transition-all flex-shrink-0"
-                        title="Rimuovi dal gruppo"
-                      >
-                        <UserMinus className="h-4 w-4" />
-                      </button>
-                    )}
-
-                    {/* Non-admin current user can leave */}
-                    {isCurrentUser && !isAdmin && (
-                      <button
-                        onClick={() => setLeaveDialogOpen(true)}
-                        className="p-2 rounded-xl text-muted-foreground hover:text-red-500 hover:bg-red-500/10 transition-all flex-shrink-0"
-                        title="Abbandona gruppo"
-                      >
-                        <LogOut className="h-4 w-4" />
-                      </button>
-                    )}
+                    <div className="flex gap-1 flex-shrink-0">
+                      {/* Admin can promote non-admin members */}
+                      {isAdmin && !isCurrentUser && !memberIsAdmin && (
+                        <button
+                          onClick={() => setMemberToPromote(uid)}
+                          className="p-2 rounded-xl text-muted-foreground hover:text-amber-500 hover:bg-amber-500/10 active:text-amber-500 active:bg-amber-500/10 transition-all"
+                          title="Promuovi ad Admin"
+                        >
+                          <Crown className="h-4 w-4" />
+                        </button>
+                      )}
+                      {/* Admin can remove non-admin members (not themselves) */}
+                      {isAdmin && !isCurrentUser && !memberIsAdmin && (
+                        <button
+                          onClick={() => setMemberToRemove(uid)}
+                          className="p-2 rounded-xl text-muted-foreground hover:text-red-500 hover:bg-red-500/10 active:text-red-500 active:bg-red-500/10 transition-all"
+                          title="Rimuovi dal gruppo"
+                        >
+                          <UserMinus className="h-4 w-4" />
+                        </button>
+                      )}
+                      {/* Non-admin current user can leave */}
+                      {isCurrentUser && !isAdmin && (
+                        <button
+                          onClick={() => setLeaveDialogOpen(true)}
+                          className="p-2 rounded-xl text-muted-foreground hover:text-red-500 hover:bg-red-500/10 active:text-red-500 active:bg-red-500/10 transition-all"
+                          title="Abbandona gruppo"
+                        >
+                          <LogOut className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 );
               })}
@@ -656,6 +790,64 @@ export default function GroupDetailPage() {
               >
                 {actionLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Abbandona
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* ── Confirm: Promote Member ───────────────────────────────────────── */}
+        <Dialog open={!!memberToPromote} onOpenChange={(o) => !o && setMemberToPromote(null)}>
+          <DialogContent className="rounded-3xl sm:max-w-sm">
+            <DialogHeader>
+              <div className="h-12 w-12 rounded-2xl bg-amber-500/10 flex items-center justify-center mb-3">
+                <Crown className="h-6 w-6 text-amber-500" />
+              </div>
+              <DialogTitle>Promuovi ad Admin</DialogTitle>
+              <DialogDescription>
+                Vuoi promuovere <strong>{memberToPromote ? getUserName(memberToPromote) : ""}</strong> ad
+                amministratore? Potrà rimuovere membri e promuovere altri utenti.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="gap-2 mt-2">
+              <Button variant="outline" className="flex-1 rounded-xl" onClick={() => setMemberToPromote(null)} disabled={actionLoading}>
+                Annulla
+              </Button>
+              <Button
+                className="flex-1 rounded-xl bg-amber-500 hover:bg-amber-600 text-white"
+                onClick={handlePromoteMember}
+                disabled={actionLoading}
+              >
+                {actionLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                👑 Promuovi
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* ── Confirm: Delete Group ─────────────────────────────────────────── */}
+        <Dialog open={deleteGroupDialog} onOpenChange={(o) => !o && setDeleteGroupDialog(false)}>
+          <DialogContent className="rounded-3xl sm:max-w-sm">
+            <DialogHeader>
+              <div className="h-12 w-12 rounded-2xl bg-red-500/10 flex items-center justify-center mb-3">
+                <Trash2 className="h-6 w-6 text-red-500" />
+              </div>
+              <DialogTitle>Elimina gruppo</DialogTitle>
+              <DialogDescription>
+                Sei sicuro di voler eliminare <strong>"{group?.name}"</strong>?
+                Verranno eliminate anche tutte le spese. Questa azione è <strong>irreversibile</strong>.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="gap-2 mt-2">
+              <Button variant="outline" className="flex-1 rounded-xl" onClick={() => setDeleteGroupDialog(false)} disabled={actionLoading}>
+                Annulla
+              </Button>
+              <Button
+                className="flex-1 rounded-xl bg-red-500 hover:bg-red-600 text-white"
+                onClick={handleDeleteGroup}
+                disabled={actionLoading}
+              >
+                {actionLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Elimina tutto
               </Button>
             </DialogFooter>
           </DialogContent>

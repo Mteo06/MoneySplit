@@ -5,9 +5,9 @@ import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
 import { Navbar } from "@/components/layout/Navbar";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef } from "react";
 import { doc, updateDoc } from "firebase/firestore";
-import { db, auth } from "@/lib/firebase";
+import { db } from "@/lib/firebase";
 import { updateProfile } from "firebase/auth";
 import { compressAvatarToBase64 } from "@/utils/imageUtils";
 import { Input } from "@/components/ui/input";
@@ -20,21 +20,23 @@ export default function ProfilePage() {
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
   const [avatarLoading, setAvatarLoading] = useState(false);
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [avatarError, setAvatarError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    if (profile) {
-      setName(profile.name || "");
-      setAvatarUrl(profile.avatar_url || null);
-    }
-  }, [profile]);
+  // Profile name comes live from AuthContext (via onSnapshot)
+  const displayName = profile?.name || user?.email?.split("@")[0] || "Utente";
+  const avatarUrl = profile?.avatar_url || null;
+  const initials = displayName.charAt(0).toUpperCase();
+
+  // Sync edit field when profile loads
+  const editName = isEditing ? name : (profile?.name || "");
 
   const handleUpdate = async () => {
     if (!user) return;
     setLoading(true);
     try {
       await updateDoc(doc(db, "users", user.uid), { name });
+      // Only update displayName (NOT photoURL — base64 is too long for Firebase Auth)
       await updateProfile(user, { displayName: name });
       setIsEditing(false);
     } catch (error) {
@@ -48,27 +50,27 @@ export default function ProfilePage() {
     const file = e.target.files?.[0];
     if (!file || !user) return;
     if (file.size > 15 * 1024 * 1024) {
-      alert("Il file è troppo grande. Massimo 15 MB.");
+      setAvatarError("File troppo grande. Massimo 15 MB.");
       return;
     }
 
     setAvatarLoading(true);
+    setAvatarError("");
     try {
-      // Compress to 200×200 square, stored as base64 in Firestore
+      // Compress to 200×200 square JPEG and save to Firestore only
+      // (Firebase Auth photoURL has a URL length limit — can't store base64 there)
       const base64 = await compressAvatarToBase64(file);
       await updateDoc(doc(db, "users", user.uid), { avatar_url: base64 });
-      await updateProfile(user, { photoURL: base64 });
-      setAvatarUrl(base64);
-    } catch (error) {
-      console.error("Error compressing avatar:", error);
-      alert("Errore durante il caricamento della foto. Riprova.");
+      // AuthContext onSnapshot will pick up the change automatically — no manual setState needed
+    } catch (error: any) {
+      console.error("Error uploading avatar:", error);
+      setAvatarError("Errore durante il caricamento. Riprova.");
     } finally {
       setAvatarLoading(false);
+      // Reset file input so same file can be re-selected
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
-
-  const displayName = name || profile?.name || user?.email?.split("@")[0] || "Utente";
-  const initials = displayName.charAt(0).toUpperCase();
 
   return (
     <ProtectedRoute>
@@ -92,17 +94,17 @@ export default function ProfilePage() {
               {/* Clickable avatar */}
               <div className="relative group">
                 <Avatar className="h-20 w-20 border-4 border-card shadow-xl">
-                  <AvatarImage src={avatarUrl || ""} />
+                  {avatarUrl && <AvatarImage src={avatarUrl} />}
                   <AvatarFallback className="text-2xl font-bold gradient-primary text-white">
                     {initials}
                   </AvatarFallback>
                 </Avatar>
                 {/* Camera hover overlay */}
                 <button
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={avatarLoading}
+                  onClick={() => !avatarLoading && fileInputRef.current?.click()}
                   className="absolute inset-0 rounded-full bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
                   title="Cambia foto profilo"
+                  type="button"
                 >
                   {avatarLoading
                     ? <Loader2 className="h-5 w-5 text-white animate-spin" />
@@ -117,19 +119,23 @@ export default function ProfilePage() {
                   onChange={handleAvatarChange}
                 />
                 {/* Camera badge */}
-                <div className="absolute -bottom-1 -right-1 h-6 w-6 rounded-full bg-primary border-2 border-card flex items-center justify-center">
+                <button
+                  type="button"
+                  onClick={() => !avatarLoading && fileInputRef.current?.click()}
+                  className="absolute -bottom-1 -right-1 h-6 w-6 rounded-full bg-primary border-2 border-card flex items-center justify-center hover:scale-110 transition-transform"
+                >
                   {avatarLoading
                     ? <Loader2 className="h-3 w-3 text-white animate-spin" />
                     : <Camera className="h-3 w-3 text-white" />
                   }
-                </div>
+                </button>
               </div>
 
               {!isEditing && (
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setIsEditing(true)}
+                  onClick={() => { setIsEditing(true); setName(profile?.name || ""); }}
                   className="gap-2 rounded-xl border-border/60 hover:border-primary/40"
                 >
                   <Pencil className="h-3.5 w-3.5" />
@@ -138,13 +144,17 @@ export default function ProfilePage() {
               )}
             </div>
 
+            {avatarError && (
+              <p className="text-xs text-destructive mb-2">{avatarError}</p>
+            )}
+
             {isEditing ? (
               <div className="space-y-3 animate-slide-up">
                 <div className="space-y-1.5">
                   <Label htmlFor="name" className="text-sm font-semibold">Nome visualizzato</Label>
                   <Input
                     id="name"
-                    value={name}
+                    value={editName}
                     onChange={(e) => setName(e.target.value)}
                     className="h-11 rounded-xl border-border/60"
                     placeholder="Il tuo nome"
@@ -157,7 +167,7 @@ export default function ProfilePage() {
                   </Button>
                   <Button
                     variant="outline"
-                    onClick={() => { setIsEditing(false); setName(profile?.name || ""); }}
+                    onClick={() => setIsEditing(false)}
                     className="gap-2 rounded-xl"
                   >
                     <X className="h-4 w-4" />
