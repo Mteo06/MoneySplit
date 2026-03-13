@@ -122,7 +122,7 @@ export default function Dashboard() {
         setTotalBalance(net);
         setTotalOwed(owed_total);
         setTotalOwing(owing_total);
-        setRecentExpenses(allExpenses.slice(0, 6));
+        setRecentExpenses(allExpenses.slice(0, 3));
       } catch (error) {
         console.error("Error fetching dashboard data", error);
       } finally {
@@ -246,7 +246,7 @@ export default function Dashboard() {
                 </Link>
               </div>
             ) : (
-              <div className="space-y-2.5">
+              <div className="space-y-3">
                 {groupBalances.slice(0, 4).map(({ group, myBalance }) => {
                   const isOwed = myBalance > 0.01;
                   const isOwing = myBalance < -0.01;

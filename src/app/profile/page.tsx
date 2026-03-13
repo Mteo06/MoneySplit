@@ -8,11 +8,11 @@ import { Button } from "@/components/ui/button";
 import { useState, useRef } from "react";
 import { doc, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { updateProfile } from "firebase/auth";
+import { updateProfile, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 import { compressAvatarToBase64 } from "@/utils/imageUtils";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Pencil, Check, X, Mail, User, Shield, Camera, Loader2 } from "lucide-react";
+import { Pencil, Check, X, Mail, User, Shield, Camera, Loader2, KeyRound, Eye, EyeOff } from "lucide-react";
 
 export default function ProfilePage() {
   const { user, profile } = useAuth();
@@ -22,6 +22,16 @@ export default function ProfilePage() {
   const [avatarLoading, setAvatarLoading] = useState(false);
   const [avatarError, setAvatarError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Change password state
+  const [changePwdOpen, setChangePwdOpen] = useState(false);
+  const [currentPwd, setCurrentPwd] = useState("");
+  const [newPwd, setNewPwd] = useState("");
+  const [showCurrentPwd, setShowCurrentPwd] = useState(false);
+  const [showNewPwd, setShowNewPwd] = useState(false);
+  const [pwdLoading, setPwdLoading] = useState(false);
+  const [pwdError, setPwdError] = useState("");
+  const [pwdSuccess, setPwdSuccess] = useState("");
 
   // Profile name comes live from AuthContext (via onSnapshot)
   const displayName = profile?.name || user?.email?.split("@")[0] || "Utente";
@@ -36,13 +46,40 @@ export default function ProfilePage() {
     setLoading(true);
     try {
       await updateDoc(doc(db, "users", user.uid), { name });
-      // Only update displayName (NOT photoURL — base64 is too long for Firebase Auth)
       await updateProfile(user, { displayName: name });
       setIsEditing(false);
     } catch (error) {
       console.error("Error updating profile", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !user.email) return;
+    if (newPwd.length < 6) {
+      setPwdError("La nuova password deve avere almeno 6 caratteri.");
+      return;
+    }
+    setPwdLoading(true);
+    setPwdError("");
+    setPwdSuccess("");
+    try {
+      const credential = EmailAuthProvider.credential(user.email, currentPwd);
+      await reauthenticateWithCredential(user, credential);
+      await updatePassword(user, newPwd);
+      setPwdSuccess("Password aggiornata con successo! ✓");
+      setCurrentPwd("");
+      setNewPwd("");
+      setTimeout(() => { setChangePwdOpen(false); setPwdSuccess(""); }, 2000);
+    } catch (err: any) {
+      if (err.code?.includes("wrong-password") || err.code?.includes("invalid-credential"))
+        setPwdError("Password attuale non corretta.");
+      else
+        setPwdError("Errore. Riprova tra qualche minuto.");
+    } finally {
+      setPwdLoading(false);
     }
   };
 
@@ -221,6 +258,74 @@ export default function ProfilePage() {
                 <p className="font-semibold text-foreground">Verificato</p>
               </div>
             </div>
+          </div>
+
+          {/* Change Password Card */}
+          <div className="bg-card border border-border/60 rounded-2xl shadow-sm overflow-hidden">
+            <button
+              type="button"
+              onClick={() => { setChangePwdOpen(o => !o); setPwdError(""); setPwdSuccess(""); }}
+              className="w-full p-4 flex items-center gap-4 hover:bg-muted/30 transition-colors"
+            >
+              <div className="h-10 w-10 rounded-xl bg-violet-500/10 flex items-center justify-center flex-shrink-0">
+                <KeyRound className="h-5 w-5 text-violet-500" />
+              </div>
+              <div className="min-w-0 flex-1 text-left">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Password</p>
+                <p className="font-semibold text-foreground">Cambia password</p>
+              </div>
+              <span className="text-muted-foreground text-sm">{changePwdOpen ? "▲" : "▼"}</span>
+            </button>
+
+            {changePwdOpen && (
+              <form onSubmit={handleChangePassword} className="px-4 pb-4 space-y-3 border-t border-border/60 pt-4">
+                {pwdError && (
+                  <p className="text-xs text-destructive bg-destructive/10 px-3 py-2 rounded-xl">{pwdError}</p>
+                )}
+                {pwdSuccess && (
+                  <p className="text-xs text-emerald-600 bg-emerald-500/10 px-3 py-2 rounded-xl">{pwdSuccess}</p>
+                )}
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-semibold">Password attuale</Label>
+                  <div className="relative">
+                    <Input
+                      type={showCurrentPwd ? "text" : "password"}
+                      placeholder="••••••••"
+                      value={currentPwd}
+                      onChange={e => setCurrentPwd(e.target.value)}
+                      required
+                      className="h-11 rounded-xl pr-10"
+                    />
+                    <button type="button" onClick={() => setShowCurrentPwd(v => !v)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                      {showCurrentPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-semibold">Nuova password</Label>
+                  <div className="relative">
+                    <Input
+                      type={showNewPwd ? "text" : "password"}
+                      placeholder="••••••••"
+                      value={newPwd}
+                      onChange={e => setNewPwd(e.target.value)}
+                      required
+                      className="h-11 rounded-xl pr-10"
+                    />
+                    <button type="button" onClick={() => setShowNewPwd(v => !v)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                      {showNewPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Minimo 6 caratteri</p>
+                </div>
+                <Button type="submit" disabled={pwdLoading} className="w-full rounded-xl gap-2 shadow-md shadow-primary/20">
+                  {pwdLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
+                  {pwdLoading ? "Aggiornamento..." : "Aggiorna password"}
+                </Button>
+              </form>
+            )}
           </div>
         </div>
       </main>
