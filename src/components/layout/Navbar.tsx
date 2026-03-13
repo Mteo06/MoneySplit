@@ -83,8 +83,15 @@ export function Navbar() {
         {/* Right side */}
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-muted/60 text-sm text-muted-foreground">
-            <div className="h-6 w-6 rounded-full gradient-primary flex items-center justify-center text-white text-xs font-semibold">
-              {initials}
+            <div className="h-6 w-6 rounded-full overflow-hidden flex-shrink-0">
+              {profile?.avatar_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={profile.avatar_url} alt={displayName} className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full gradient-primary flex items-center justify-center text-white text-xs font-semibold">
+                  {initials}
+                </div>
+              )}
             </div>
             <span className="font-medium text-foreground">{displayName}</span>
           </div>

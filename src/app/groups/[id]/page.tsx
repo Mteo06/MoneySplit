@@ -635,10 +635,23 @@ export default function GroupDetailPage() {
 
                 return (
                   <div key={uid} className="bg-card border border-border/60 rounded-2xl p-4 flex items-center gap-3 shadow-sm">
-                    <div className={`h-11 w-11 rounded-xl flex items-center justify-center font-bold text-sm flex-shrink-0 ${
-                      isCurrentUser ? "gradient-primary text-white shadow-md shadow-primary/30" : "bg-muted text-muted-foreground"
+                  <div className={`h-11 w-11 rounded-xl overflow-hidden flex-shrink-0 ${
+                      isCurrentUser ? "shadow-md shadow-primary/30" : ""
                     }`}>
-                      {memberInitials}
+                      {memberData?.avatar_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={memberData.avatar_url}
+                          alt={name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className={`w-full h-full flex items-center justify-center font-bold text-sm ${
+                          isCurrentUser ? "gradient-primary text-white" : "bg-muted text-muted-foreground"
+                        }`}>
+                          {memberInitials}
+                        </div>
+                      )}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
