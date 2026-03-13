@@ -332,7 +332,7 @@ export default function GroupDetailPage() {
           <div className="flex gap-2">
             {/* Invite */}
             <Dialog>
-              <DialogTrigger className="hidden sm:inline-flex items-center gap-2 h-9 px-3 text-sm font-medium rounded-xl border border-border/60 bg-background hover:bg-accent hover:text-accent-foreground transition-colors">
+              <DialogTrigger className="inline-flex items-center gap-2 h-9 px-3 text-sm font-medium rounded-xl border border-border/60 bg-background hover:bg-accent hover:text-accent-foreground transition-colors">
                 <LinkIcon className="h-4 w-4" />
                 Invita
               </DialogTrigger>
@@ -635,9 +635,8 @@ export default function GroupDetailPage() {
 
                 return (
                   <div key={uid} className="bg-card border border-border/60 rounded-2xl p-4 flex items-center gap-3 shadow-sm">
-                  <div className={`h-11 w-11 rounded-xl overflow-hidden flex-shrink-0 ${
-                      isCurrentUser ? "shadow-md shadow-primary/30" : ""
-                    }`}>
+                    <div className={`h-11 w-11 rounded-xl overflow-hidden flex-shrink-0 ${isCurrentUser ? "shadow-md shadow-primary/30" : ""
+                      }`}>
                       {memberData?.avatar_url ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
@@ -646,9 +645,8 @@ export default function GroupDetailPage() {
                           className="w-full h-full object-cover"
                         />
                       ) : (
-                        <div className={`w-full h-full flex items-center justify-center font-bold text-sm ${
-                          isCurrentUser ? "gradient-primary text-white" : "bg-muted text-muted-foreground"
-                        }`}>
+                        <div className={`w-full h-full flex items-center justify-center font-bold text-sm ${isCurrentUser ? "gradient-primary text-white" : "bg-muted text-muted-foreground"
+                          }`}>
                           {memberInitials}
                         </div>
                       )}
