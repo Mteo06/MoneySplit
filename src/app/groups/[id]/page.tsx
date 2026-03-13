@@ -14,7 +14,7 @@ import {
 import { db } from "@/lib/firebase";
 import {
   ArrowLeft, Plus, Receipt, Users, Link as LinkIcon,
-  CheckCircle2, Loader2, Trash2, LogOut, UserMinus, AlertTriangle
+  CheckCircle2, Loader2, Trash2, LogOut, UserMinus, AlertTriangle, ScanLine, X
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -49,6 +49,7 @@ export default function GroupDetailPage() {
   const [memberToRemove, setMemberToRemove] = useState<string | null>(null);
   const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [receiptToView, setReceiptToView] = useState<string | null>(null);
 
   const isAdmin = group?.created_by === user?.uid;
 
@@ -356,11 +357,22 @@ export default function GroupDetailPage() {
               <div className="space-y-2.5">
                 {expenses.map((expense) => {
                   const canDelete = expense.paid_by === user?.uid || isAdmin;
+                  const hasReceipt = !!expense.receipt_base64;
                   return (
                     <div key={expense.id} className="bg-card border border-border/60 rounded-2xl p-4 flex items-center justify-between hover:shadow-md transition-all duration-200 shadow-sm group">
-                      <div className="flex gap-3 items-center min-w-0">
-                        <div className="h-11 w-11 rounded-xl bg-primary/10 flex items-center justify-center text-xl flex-shrink-0">
-                          {CATEGORY_ICONS[expense.category] || "💸"}
+                      <div
+                        className="flex gap-3 items-center min-w-0 flex-1 cursor-pointer"
+                        onClick={() => hasReceipt && setReceiptToView(expense.receipt_base64)}
+                      >
+                        <div className="relative h-11 w-11 flex-shrink-0">
+                          <div className="h-11 w-11 rounded-xl bg-primary/10 flex items-center justify-center text-xl">
+                            {CATEGORY_ICONS[expense.category] || "💸"}
+                          </div>
+                          {hasReceipt && (
+                            <div className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-primary flex items-center justify-center shadow-sm" title="Scontrino allegato">
+                              <ScanLine className="h-3 w-3 text-white" />
+                            </div>
+                          )}
                         </div>
                         <div className="min-w-0">
                           <h4 className="font-semibold text-foreground text-sm truncate">{expense.description}</h4>
@@ -377,6 +389,9 @@ export default function GroupDetailPage() {
                                 {getUserName(expense.paid_by)}
                               </span>
                             </span>
+                            {hasReceipt && (
+                              <span className="text-primary font-medium">· 📎 scontrino</span>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -387,7 +402,7 @@ export default function GroupDetailPage() {
                         </div>
                         {canDelete && (
                           <button
-                            onClick={() => setExpenseToDelete(expense)}
+                            onClick={(e) => { e.stopPropagation(); setExpenseToDelete(expense); }}
                             className="opacity-0 group-hover:opacity-100 p-2 rounded-xl text-muted-foreground hover:text-red-500 hover:bg-red-500/10 transition-all"
                             title="Elimina spesa"
                           >
@@ -645,6 +660,34 @@ export default function GroupDetailPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* ── Receipt Lightbox ───────────────────────────────────────────────── */}
+        {receiptToView && (
+          <div
+            className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4"
+            onClick={() => setReceiptToView(null)}
+          >
+            <div className="relative max-w-lg w-full" onClick={(e) => e.stopPropagation()}>
+              <button
+                onClick={() => setReceiptToView(null)}
+                className="absolute -top-12 right-0 h-10 w-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+              <div className="bg-card rounded-3xl overflow-hidden shadow-2xl">
+                <div className="px-4 pt-4 pb-2 border-b border-border/60">
+                  <p className="font-semibold text-foreground text-sm">📎 Foto Scontrino</p>
+                </div>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={receiptToView}
+                  alt="Scontrino"
+                  className="w-full max-h-[70vh] object-contain"
+                />
+              </div>
+            </div>
+          </div>
+        )}
 
       </main>
     </ProtectedRoute>
