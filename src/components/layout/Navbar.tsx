@@ -5,7 +5,7 @@ import { useAuth } from "@/lib/AuthContext";
 import { auth } from "@/lib/firebase";
 import { signOut } from "firebase/auth";
 import { Button } from "@/components/ui/button";
-import { LogOut, User, Wallet, Users } from "lucide-react";
+import { LogOut, LayoutDashboard, Users, User } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
@@ -26,72 +26,111 @@ export function Navbar() {
     }
   };
 
-  if (!user) return null; // Only show navbar for authenticated users
+  if (!user) return null;
 
   const navItems = [
-    { href: "/dashboard", label: "Dashboard", icon: Wallet },
+    { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { href: "/groups", label: "Groups", icon: Users },
     { href: "/profile", label: "Profile", icon: User },
   ];
 
+  const displayName = profile?.name || user.email?.split("@")[0] || "User";
+  const initials = displayName.charAt(0).toUpperCase();
+
   return (
     <>
       {/* Desktop Top Navbar */}
-      <nav className="hidden md:flex items-center justify-between px-6 py-4 bg-white border-b sticky top-0 z-50">
-        <div className="flex items-center space-x-8">
-          <Link href="/dashboard" className="text-xl font-bold text-indigo-600">
-            MoneySplit
+      <nav className="hidden md:flex items-center justify-between px-8 py-0 h-16 bg-white/80 backdrop-blur-xl border-b border-border/60 sticky top-0 z-50 shadow-sm">
+        {/* Brand */}
+        <div className="flex items-center gap-8">
+          <Link href="/dashboard" className="flex items-center gap-2 group">
+            <div className="h-8 w-8 rounded-xl gradient-primary flex items-center justify-center shadow-lg shadow-primary/30 group-hover:scale-105 transition-transform duration-200">
+              <span className="text-white text-sm font-bold">M</span>
+            </div>
+            <span className="text-lg font-bold bg-gradient-to-r from-primary to-violet-600 bg-clip-text text-transparent">
+              MoneySplit
+            </span>
           </Link>
-          <div className="flex space-x-1">
-            {navItems.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  "px-3 py-2 rounded-md text-sm font-medium transition-colors",
-                  pathname.startsWith(item.href)
-                    ? "bg-indigo-50 text-indigo-700"
-                    : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-                )}
-              >
-                {item.label}
-              </Link>
-            ))}
+
+          {/* Nav Links */}
+          <div className="flex items-center gap-1">
+            {navItems.map((item) => {
+              const isActive = pathname.startsWith(item.href);
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={cn(
+                    "flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200",
+                    isActive
+                      ? "bg-primary/10 text-primary shadow-sm"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  )}
+                >
+                  <item.icon className="h-4 w-4" />
+                  {item.label}
+                </Link>
+              );
+            })}
           </div>
         </div>
-        <div className="flex items-center space-x-4">
-          <span className="text-sm text-gray-700">
-            {profile?.name || user.email}
-          </span>
-          <Button variant="outline" size="sm" onClick={handleLogout}>
-            <LogOut className="h-4 w-4 mr-2" />
-            Logout
+
+        {/* Right side */}
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-muted/60 text-sm text-muted-foreground">
+            <div className="h-6 w-6 rounded-full gradient-primary flex items-center justify-center text-white text-xs font-semibold">
+              {initials}
+            </div>
+            <span className="font-medium text-foreground">{displayName}</span>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleLogout}
+            className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 gap-2 rounded-xl"
+          >
+            <LogOut className="h-4 w-4" />
+            <span>Logout</span>
           </Button>
         </div>
       </nav>
 
       {/* Mobile Bottom Navigation */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t z-50 px-2 pb-safe pt-2">
-        <div className="flex justify-around items-center">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = pathname.startsWith(item.href);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  "flex flex-col items-center p-2 rounded-lg transition-colors flex-1 text-center",
-                  isActive
-                    ? "text-indigo-600"
-                    : "text-gray-500 hover:text-gray-900"
-                )}
-              >
-                <Icon className={cn("h-6 w-6 mb-1", isActive && "fill-indigo-50")} />
-                <span className="text-[10px] font-medium">{item.label}</span>
-              </Link>
-            );
-          })}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 px-3 pb-4 pt-2">
+        <div className="glass rounded-2xl shadow-2xl shadow-black/10 border-border/40 overflow-hidden">
+          <div className="flex justify-around items-center px-1 py-2">
+            {navItems.map((item) => {
+              const isActive = pathname.startsWith(item.href);
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={cn(
+                    "flex flex-col items-center gap-1 p-2 rounded-xl transition-all duration-200 flex-1 text-center min-w-0",
+                    isActive
+                      ? "text-primary"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <div className={cn(
+                    "p-1.5 rounded-lg transition-all duration-200",
+                    isActive ? "bg-primary/15" : ""
+                  )}>
+                    <item.icon className={cn(
+                      "h-5 w-5 transition-all duration-200",
+                      isActive && "stroke-[2.5px]"
+                    )} />
+                  </div>
+                  <span className={cn(
+                    "text-[10px] font-medium tracking-tight",
+                    isActive ? "font-semibold" : ""
+                  )}>
+                    {item.label}
+                  </span>
+                </Link>
+              );
+            })}
+          </div>
         </div>
       </nav>
     </>

@@ -1,0 +1,16 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Avatar uploads: solo l'utente può scrivere la propria avatar
+    match /avatars/{userId}/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth.uid == userId;
+    }
+
+    // Scontrini: qualsiasi utente autenticato può leggere e scrivere
+    match /receipts/{groupId}/{allPaths=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
