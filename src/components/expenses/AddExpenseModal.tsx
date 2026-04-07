@@ -32,10 +32,10 @@ const SPLIT_MODES: { value: SplitMode; label: string; icon: any; desc: string }[
   { value: "percentage", label: "Percentuale",   icon: Percent,   desc: "% per ogni persona" },
 ];
 
-const inputClass = `w-full h-11 px-4 rounded-xl text-sm text-[#f0f0ee] placeholder:text-[#505058] outline-none transition-all
-  bg-[rgba(255,255,255,0.04)] border border-[rgba(255,255,255,0.08)]
+const inputClass = `w-full h-11 px-4 rounded-xl text-sm text-foreground placeholder:text-[var(--text-dim)] outline-none transition-all
+  bg-muted/50 border border-[var(--card-border)]
   focus:border-[#22c55e] focus:bg-[rgba(34,197,94,0.04)] focus:shadow-[0_0_0_3px_rgba(34,197,94,0.1)]`;
-const labelClass = "block text-xs font-semibold text-[#a0a0a8] uppercase tracking-wider mb-1.5";
+const labelClass = "block text-xs font-semibold text-[var(--text-dim)] uppercase tracking-wider mb-1.5";
 
 export function AddExpenseModal({ groupId, groupCurrency, isOpen, onClose, members, usersMap }: AddExpenseModalProps) {
   const { user } = useAuth();
@@ -185,22 +185,22 @@ export function AddExpenseModal({ groupId, groupCurrency, isOpen, onClose, membe
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
 
       <div className="w-full sm:max-w-lg rounded-t-3xl sm:rounded-2xl overflow-hidden animate-fade-in"
-        style={{ background:"#111114", border:"1px solid rgba(255,255,255,0.08)", maxHeight:"92dvh", display:"flex", flexDirection:"column" }}>
+        style={{ background:"var(--card-bg)", border:"1px solid var(--card-border)", maxHeight:"92dvh", display:"flex", flexDirection:"column" }}>
 
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom:"1px solid rgba(255,255,255,0.07)" }}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--card-border)]">
           <div className="flex items-center gap-3">
             <div className="h-9 w-9 rounded-xl flex items-center justify-center"
               style={{ background:"rgba(34,197,94,0.1)", border:"1px solid rgba(34,197,94,0.2)" }}>
               <Receipt className="h-4 w-4 text-[#22c55e]" />
             </div>
             <div>
-              <h2 className="text-sm font-bold text-[#f0f0ee]">Aggiungi Spesa</h2>
-              <p className="text-xs text-[#70707a]">Registra una spesa condivisa</p>
+              <h2 className="text-sm font-bold text-foreground">Aggiungi Spesa</h2>
+              <p className="text-xs text-[var(--text-dim)]">Registra una spesa condivisa</p>
             </div>
           </div>
           <button onClick={onClose}
-            className="h-8 w-8 rounded-xl flex items-center justify-center text-[#505058] hover:text-[#f0f0ee] hover:bg-[rgba(255,255,255,0.06)] transition-all">
+            className="h-8 w-8 rounded-xl flex items-center justify-center text-[var(--text-dim)] hover:text-foreground hover:bg-muted/50 transition-all">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -251,10 +251,10 @@ export function AddExpenseModal({ groupId, groupCurrency, isOpen, onClose, membe
                   <button key={uid} type="button" onClick={() => setPaidBy(uid)} disabled={loading}
                     className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-medium transition-all"
                     style={paidBy === uid
-                      ? { background:"rgba(34,197,94,0.1)", border:"1px solid rgba(34,197,94,0.25)", color:"#22c55e" }
-                      : { background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)", color:"#a0a0a8" }}>
+                      ? { background:"var(--nav-active-bg)", border:"1px solid rgba(34,197,94,0.25)", color:"#22c55e" }
+                      : { background:"var(--card-bg)", border:"1px solid var(--card-border)", color:"var(--text-dim)" }}>
                     <div className="h-7 w-7 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0"
-                      style={paidBy === uid ? { background:"#22c55e", color:"#0a0a0b" } : { background:"rgba(255,255,255,0.06)", color:"#a0a0a8" }}>
+                      style={paidBy === uid ? { background:"#22c55e", color:"#0a0a0b" } : { background:"var(--nav-active-bg)", color:"var(--text-dim)" }}>
                       {getInitials(uid)}
                     </div>
                     <span className="truncate">{getUserName(uid)}</span>
@@ -271,17 +271,17 @@ export function AddExpenseModal({ groupId, groupCurrency, isOpen, onClose, membe
                   <button key={value} type="button" onClick={() => setSplitMode(value)}
                     className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-left transition-all"
                     style={splitMode === value
-                      ? { background:"rgba(34,197,94,0.1)", border:"1px solid rgba(34,197,94,0.25)" }
-                      : { background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)" }}>
+                      ? { background:"var(--nav-active-bg)", border:"1px solid rgba(34,197,94,0.25)" }
+                      : { background:"var(--card-bg)", border:"1px solid var(--card-border)" }}>
                     <div className="h-8 w-8 rounded-lg flex items-center justify-center flex-shrink-0"
                       style={splitMode === value
                         ? { background:"rgba(34,197,94,0.15)", color:"#22c55e" }
-                        : { background:"rgba(255,255,255,0.05)", color:"#70707a" }}>
+                        : { background:"var(--nav-active-bg)", color:"var(--text-dim)" }}>
                       <Icon className="h-4 w-4" />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-xs font-bold truncate" style={{ color: splitMode === value ? "#22c55e" : "#f0f0ee" }}>{label}</p>
-                      <p className="text-[10px] truncate" style={{ color:"#70707a" }}>{desc}</p>
+                      <p className="text-xs font-bold truncate" style={{ color: splitMode === value ? "#22c55e" : "var(--foreground)" }}>{label}</p>
+                      <p className="text-[10px] truncate" style={{ color:"var(--text-dim)" }}>{desc}</p>
                     </div>
                   </button>
                 ))}
@@ -289,10 +289,10 @@ export function AddExpenseModal({ groupId, groupCurrency, isOpen, onClose, membe
 
               {/* ── EQUAL: just show info ── */}
               {splitMode === "equal" && totalAmount > 0 && (
-                <div className="p-3 rounded-xl space-y-1" style={{ background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.06)" }}>
+                <div className="p-3 rounded-xl space-y-1" style={{ background:"var(--nav-active-bg)", border:"1px solid var(--card-border)" }}>
                   {members.map(uid => (
                     <div key={uid} className="flex items-center justify-between">
-                      <span className="text-xs text-[#a0a0a8]">{getUserName(uid)}</span>
+                      <span className="text-xs text-[var(--text-dim)]">{getUserName(uid)}</span>
                       <span className="text-xs font-bold tabular text-[#22c55e]">
                         {currSym}{(totalAmount / members.length).toFixed(2)}
                       </span>
@@ -304,19 +304,19 @@ export function AddExpenseModal({ groupId, groupCurrency, isOpen, onClose, membe
               {/* ── SELECT PARTICIPANTS ── */}
               {splitMode === "select" && (
                 <div className="space-y-2">
-                  <p className="text-xs text-[#70707a] mb-2">Seleziona chi partecipa a questa spesa:</p>
+                  <p className="text-xs text-[var(--text-dim)] mb-2">Seleziona chi partecipa a questa spesa:</p>
                   <div className="grid grid-cols-2 gap-2">
                     {members.map(uid => (
                       <button key={uid} type="button" onClick={() => toggleParticipant(uid)}
                         className="flex items-center gap-2 px-3 py-2.5 rounded-xl transition-all"
                         style={selectedParticipants.includes(uid)
-                          ? { background:"rgba(34,197,94,0.1)", border:"1px solid rgba(34,197,94,0.25)" }
-                          : { background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)" }}>
+                          ? { background:"var(--nav-active-bg)", border:"1px solid rgba(34,197,94,0.25)" }
+                          : { background:"var(--card-bg)", border:"1px solid var(--card-border)" }}>
                         <div className="h-7 w-7 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0"
-                          style={selectedParticipants.includes(uid) ? { background:"#22c55e", color:"#0a0a0b" } : { background:"rgba(255,255,255,0.06)", color:"#70707a" }}>
+                          style={selectedParticipants.includes(uid) ? { background:"#22c55e", color:"#0a0a0b" } : { background:"var(--nav-active-bg)", color:"var(--text-dim)" }}>
                           {getInitials(uid)}
                         </div>
-                        <span className="text-sm truncate" style={{ color: selectedParticipants.includes(uid) ? "#22c55e" : "#a0a0a8" }}>
+                        <span className="text-sm truncate" style={{ color: selectedParticipants.includes(uid) ? "#22c55e" : "var(--text-dim)" }}>
                           {getUserName(uid)}
                         </span>
                       </button>
@@ -324,8 +324,8 @@ export function AddExpenseModal({ groupId, groupCurrency, isOpen, onClose, membe
                   </div>
                   {selectedParticipants.length > 0 && totalAmount > 0 && (
                     <div className="flex items-center justify-between px-4 py-2.5 rounded-xl mt-2"
-                      style={{ background:"rgba(34,197,94,0.06)", border:"1px solid rgba(34,197,94,0.15)" }}>
-                      <span className="text-xs text-[#70707a]">{selectedParticipants.length} persone · ciascuno</span>
+                      style={{ background:"var(--nav-active-bg)", border:"1px solid rgba(34,197,94,0.15)" }}>
+                      <span className="text-xs text-[var(--text-dim)]">{selectedParticipants.length} persone · ciascuno</span>
                       <span className="text-sm font-bold tabular text-[#22c55e]">
                         {currSym}{(totalAmount / selectedParticipants.length).toFixed(2)}
                       </span>
@@ -337,21 +337,21 @@ export function AddExpenseModal({ groupId, groupCurrency, isOpen, onClose, membe
               {/* ── CUSTOM AMOUNTS ── */}
               {splitMode === "custom" && (
                 <div className="space-y-2">
-                  <p className="text-xs text-[#70707a] mb-2">Inserisci l'importo esatto per ogni persona:</p>
+                  <p className="text-xs text-[var(--text-dim)] mb-2">Inserisci l'importo esatto per ogni persona:</p>
                   {members.map(uid => (
                     <div key={uid} className="flex items-center gap-3">
                       <div className="h-8 w-8 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0"
-                        style={{ background:"rgba(34,197,94,0.1)", color:"#22c55e" }}>
+                        style={{ background:"var(--nav-active-bg)", color:"#22c55e" }}>
                         {getInitials(uid)}
                       </div>
-                      <span className="text-sm text-[#a0a0a8] flex-1 truncate">{getUserName(uid)}</span>
+                      <span className="text-sm text-[var(--text-dim)] flex-1 truncate">{getUserName(uid)}</span>
                       <div className="relative w-28">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-[#505058]">{currSym}</span>
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-[var(--text-dim)]">{currSym}</span>
                         <input type="number" step="0.01" min="0" placeholder="0.00"
                           value={customAmounts[uid] || ""}
                           onChange={e => setCustomAmounts(prev => ({ ...prev, [uid]: e.target.value }))}
-                          className="w-full h-9 pl-7 pr-3 rounded-xl text-sm text-[#f0f0ee] outline-none transition-all tabular
-                            bg-[rgba(255,255,255,0.04)] border border-[rgba(255,255,255,0.08)]
+                          className="w-full h-9 pl-7 pr-3 rounded-xl text-sm text-foreground outline-none transition-all tabular
+                            bg-muted/50 border border-[var(--card-border)]
                             focus:border-[#22c55e] focus:shadow-[0_0_0_2px_rgba(34,197,94,0.1)]"
                         />
                       </div>
@@ -374,17 +374,17 @@ export function AddExpenseModal({ groupId, groupCurrency, isOpen, onClose, membe
               {/* ── PERCENTAGE ── */}
               {splitMode === "percentage" && (
                 <div className="space-y-2">
-                  <p className="text-xs text-[#70707a] mb-2">Assegna la percentuale per ogni persona (totale 100%):</p>
+                  <p className="text-xs text-[var(--text-dim)] mb-2">Assegna la percentuale per ogni persona (totale 100%):</p>
                   {members.map(uid => (
                     <div key={uid} className="flex items-center gap-3">
                       <div className="h-8 w-8 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0"
-                        style={{ background:"rgba(34,197,94,0.1)", color:"#22c55e" }}>
+                        style={{ background:"var(--nav-active-bg)", color:"#22c55e" }}>
                         {getInitials(uid)}
                       </div>
-                      <span className="text-sm text-[#a0a0a8] flex-1 truncate">{getUserName(uid)}</span>
+                      <span className="text-sm text-[var(--text-dim)] flex-1 truncate">{getUserName(uid)}</span>
                       <div className="flex items-center gap-2">
                         {totalAmount > 0 && (parseFloat(percentages[uid] || "0") > 0) && (
-                          <span className="text-xs tabular text-[#70707a] w-16 text-right">
+                          <span className="text-xs tabular text-[var(--text-dim)] w-16 text-right">
                             {currSym}{(totalAmount * (parseFloat(percentages[uid]) / 100)).toFixed(2)}
                           </span>
                         )}
@@ -392,11 +392,11 @@ export function AddExpenseModal({ groupId, groupCurrency, isOpen, onClose, membe
                           <input type="number" step="0.1" min="0" max="100" placeholder="0"
                             value={percentages[uid] || ""}
                             onChange={e => setPercentages(prev => ({ ...prev, [uid]: e.target.value }))}
-                            className="w-full h-9 pl-3 pr-7 rounded-xl text-sm text-[#f0f0ee] outline-none transition-all tabular
-                              bg-[rgba(255,255,255,0.04)] border border-[rgba(255,255,255,0.08)]
+                            className="w-full h-9 pl-3 pr-7 rounded-xl text-sm text-foreground outline-none transition-all tabular
+                              bg-muted/50 border border-[var(--card-border)]
                               focus:border-[#22c55e] focus:shadow-[0_0_0_2px_rgba(34,197,94,0.1)]"
                           />
-                          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[#505058]">%</span>
+                          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[var(--text-dim)]">%</span>
                         </div>
                       </div>
                     </div>
@@ -420,19 +420,19 @@ export function AddExpenseModal({ groupId, groupCurrency, isOpen, onClose, membe
             <div>
               <label className={labelClass}><Camera className="h-3.5 w-3.5 inline mr-1" />Scontrino (opzionale)</label>
               {receiptPreview ? (
-                <div className="relative rounded-xl overflow-hidden" style={{ border:"1px solid rgba(255,255,255,0.08)" }}>
+                <div className="relative rounded-xl overflow-hidden border border-[var(--card-border)]">
                   <img src={receiptPreview} alt="Scontrino" className="w-full max-h-32 object-cover" />
                   <button type="button" onClick={() => { setReceiptBase64(null); setReceiptPreview(null); }}
                     className="absolute top-2 right-2 h-7 w-7 rounded-lg flex items-center justify-center"
-                    style={{ background:"rgba(0,0,0,0.6)", backdropFilter:"blur(4px)", color:"#f0f0ee" }}>
+                    style={{ background:"rgba(0,0,0,0.6)", backdropFilter:"blur(4px)", color:"var(--foreground)" }}>
                     <X className="h-3.5 w-3.5" />
                   </button>
                 </div>
               ) : (
-                <label className="flex items-center justify-center gap-2 h-12 rounded-xl cursor-pointer transition-all hover:border-[rgba(34,197,94,0.3)] hover:bg-[rgba(34,197,94,0.03)]"
-                  style={{ background:"rgba(255,255,255,0.02)", border:"1px dashed rgba(255,255,255,0.12)" }}>
-                  {receiptLoading ? <Loader2 className="h-4 w-4 animate-spin text-[#70707a]" /> : <Camera className="h-4 w-4 text-[#505058]" />}
-                  <span className="text-sm text-[#505058]">{receiptLoading ? "Caricamento…" : "Carica foto scontrino"}</span>
+                <label className="flex items-center justify-center gap-2 h-12 rounded-xl cursor-pointer transition-all hover:border-[#22c55e]/30 hover:bg-[rgba(34,197,94,0.03)]"
+                  style={{ background:"var(--nav-active-bg)", border:"1px dashed var(--card-border)" }}>
+                  {receiptLoading ? <Loader2 className="h-4 w-4 animate-spin text-[var(--text-dim)]" /> : <Camera className="h-4 w-4 text-[var(--text-dim)]" />}
+                  <span className="text-sm text-[var(--text-dim)]">{receiptLoading ? "Caricamento…" : "Carica foto scontrino"}</span>
                   <input type="file" accept="image/*" className="hidden" onChange={handleReceiptChange} disabled={receiptLoading} />
                 </label>
               )}
@@ -440,10 +440,10 @@ export function AddExpenseModal({ groupId, groupCurrency, isOpen, onClose, membe
           </div>
 
           {/* Footer */}
-          <div className="px-5 py-4 flex gap-3" style={{ borderTop:"1px solid rgba(255,255,255,0.07)" }}>
+          <div className="px-5 py-4 flex gap-3 border-t border-[var(--card-border)]">
             <button type="button" onClick={onClose}
-              className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-[#a0a0a8] hover:text-[#f0f0ee] transition-all"
-              style={{ background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.08)" }}>
+              className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-[var(--text-dim)] hover:text-foreground transition-all"
+              style={{ background:"var(--card-bg)", border:"1px solid var(--card-border)" }}>
               Annulla
             </button>
             <button type="submit" disabled={loading || !isFormValid}
