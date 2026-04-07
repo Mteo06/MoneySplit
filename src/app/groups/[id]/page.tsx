@@ -4,8 +4,6 @@ import { useEffect, useState, useRef } from "react";
 import { useAuth } from "@/lib/AuthContext";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
 import { Navbar } from "@/components/layout/Navbar";
-import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useParams, useRouter } from "next/navigation";
 import {
   doc, getDoc, getDocs, collection, query, where,
@@ -14,24 +12,24 @@ import {
 import { db } from "@/lib/firebase";
 import {
   ArrowLeft, Plus, Receipt, Users, Link as LinkIcon,
-  CheckCircle2, Loader2, Trash2, LogOut, UserMinus, AlertTriangle, ScanLine, X, Crown, Camera
+  CheckCircle2, Loader2, Trash2, LogOut, AlertTriangle,
+  X, Crown, Camera, ChevronDown, ChevronUp, ScanLine
 } from "lucide-react";
 import Link from "next/link";
-import {
-  Dialog, DialogContent, DialogDescription, DialogHeader,
-  DialogTitle, DialogTrigger, DialogFooter
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { AddExpenseModal } from "@/components/expenses/AddExpenseModal";
 import { simplifyDebts } from "@/utils/settlementAlgorithm";
 import { compressImageToBase64 } from "@/utils/imageUtils";
+import { clsx } from "clsx";
 
 const CATEGORY_ICONS: Record<string, string> = {
   Cibo: "🍔", Viaggio: "✈️", Trasporto: "🚗", Alloggio: "🏨",
   Shopping: "🛍️", Intrattenimento: "🎬", Altro: "💸",
-  Food: "🍔", Travel: "✈️", Transport: "🚗", Accommodation: "🏨",
-  Entertainment: "🎬", Other: "💸",
 };
+
+const TABS = ["Spese", "Saldi", "Membri"] as const;
+type Tab = typeof TABS[number];
+
+const labelClass = "block text-xs font-semibold text-[var(--text-dim)] uppercase tracking-wider mb-1.5";
 
 export default function GroupDetailPage() {
   const { id } = useParams();
@@ -43,9 +41,10 @@ export default function GroupDetailPage() {
   const [participants, setParticipants] = useState<any[]>([]);
   const [usersMap, setUsersMap] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<Tab>("Spese");
   const [isAddExpenseOpen, setIsAddExpenseOpen] = useState(false);
+  const [copySuccess, setCopySuccess] = useState(false);
 
-  // Confirm dialogs
   const [expenseToDelete, setExpenseToDelete] = useState<any>(null);
   const [memberToRemove, setMemberToRemove] = useState<string | null>(null);
   const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
@@ -56,10 +55,8 @@ export default function GroupDetailPage() {
   const [groupImageLoading, setGroupImageLoading] = useState(false);
   const groupImageInputRef = useRef<HTMLInputElement>(null);
 
-  // Admin = original creator OR member in admin_ids array
   const isAdmin = group?.created_by === user?.uid ||
     (group?.admin_ids && group.admin_ids.includes(user?.uid));
-
   const isMemberAdmin = (uid: string) =>
     uid === group?.created_by || (group?.admin_ids && group.admin_ids.includes(uid));
 
@@ -67,121 +64,71 @@ export default function GroupDetailPage() {
     if (uid === user?.uid) return "Tu";
     return usersMap[uid]?.name || usersMap[uid]?.email?.split("@")[0] || "Utente";
   };
-
   const getInitials = (uid: string) => {
-    const name = getUserName(uid);
-    return name === "Tu" ? "T" : name.charAt(0).toUpperCase();
+    const n = getUserName(uid); return n === "Tu" ? "T" : n.charAt(0).toUpperCase();
   };
 
-  // ─── Delete Expense ────────────────────────────────────────────────────────
   const handleDeleteExpense = async () => {
     if (!expenseToDelete) return;
     setActionLoading(true);
     try {
-      // Delete all expense_participants for this expense
-      const qPart = query(
-        collection(db, "expense_participants"),
-        where("expense_id", "==", expenseToDelete.id)
-      );
+      const qPart = query(collection(db, "expense_participants"), where("expense_id", "==", expenseToDelete.id));
       const pSnap = await getDocs(qPart);
       await Promise.all(pSnap.docs.map(d => deleteDoc(d.ref)));
-      // Delete the expense itself
       await deleteDoc(doc(db, "expenses", expenseToDelete.id));
       setExpenseToDelete(null);
-    } catch (err) {
-      console.error("Error deleting expense:", err);
-    } finally {
-      setActionLoading(false);
-    }
+    } catch (e) { console.error(e); } finally { setActionLoading(false); }
   };
 
-  // ─── Remove Member (admin only) ────────────────────────────────────────────
   const handleRemoveMember = async () => {
     if (!memberToRemove || !group) return;
     setActionLoading(true);
     try {
-      await updateDoc(doc(db, "groups", group.id), {
-        members: arrayRemove(memberToRemove),
-      });
-      setGroup((prev: any) => ({
-        ...prev,
-        members: prev.members.filter((m: string) => m !== memberToRemove),
-      }));
+      await updateDoc(doc(db, "groups", group.id), { members: arrayRemove(memberToRemove) });
+      setGroup((prev: any) => ({ ...prev, members: prev.members.filter((m: string) => m !== memberToRemove) }));
       setMemberToRemove(null);
-    } catch (err) {
-      console.error("Error removing member:", err);
-    } finally {
-      setActionLoading(false);
-    }
+    } catch (e) { console.error(e); } finally { setActionLoading(false); }
   };
 
-  // ─── Leave Group ───────────────────────────────────────────────────────────
   const handleLeaveGroup = async () => {
     if (!user || !group) return;
     setActionLoading(true);
     try {
-      await updateDoc(doc(db, "groups", group.id), {
-        members: arrayRemove(user.uid),
-      });
+      await updateDoc(doc(db, "groups", group.id), { members: arrayRemove(user.uid) });
       router.push("/groups");
-    } catch (err) {
-      console.error("Error leaving group:", err);
-      setActionLoading(false);
-    }
+    } catch (e) { console.error(e); setActionLoading(false); }
   };
 
-  // ─── Promote Member to Admin ───────────────────────────────────────────────
   const handlePromoteMember = async () => {
     if (!memberToPromote || !group) return;
     setActionLoading(true);
     try {
-      await updateDoc(doc(db, "groups", group.id), {
-        admin_ids: arrayUnion(memberToPromote),
-      });
-      setGroup((prev: any) => ({
-        ...prev,
-        admin_ids: [...(prev.admin_ids || []), memberToPromote],
-      }));
+      await updateDoc(doc(db, "groups", group.id), { admin_ids: arrayUnion(memberToPromote) });
+      setGroup((prev: any) => ({ ...prev, admin_ids: [...(prev.admin_ids || []), memberToPromote] }));
       setMemberToPromote(null);
-    } catch (err) {
-      console.error("Error promoting member:", err);
-    } finally {
-      setActionLoading(false);
-    }
+    } catch (e) { console.error(e); } finally { setActionLoading(false); }
   };
 
-  // ─── Delete Group (admin only) ─────────────────────────────────────────────
   const handleDeleteGroup = async () => {
     if (!group) return;
     setActionLoading(true);
     try {
-      // 1. Delete all expense_participants for all group expenses
       const expenseIds = expenses.map(e => e.id);
       if (expenseIds.length > 0) {
         const chunks: string[][] = [];
-        for (let i = 0; i < expenseIds.length; i += 10)
-          chunks.push(expenseIds.slice(i, i + 10));
+        for (let i = 0; i < expenseIds.length; i += 10) chunks.push(expenseIds.slice(i, i + 10));
         for (const chunk of chunks) {
-          const qPart = query(
-            collection(db, "expense_participants"),
-            where("expense_id", "in", chunk)
-          );
+          const qPart = query(collection(db, "expense_participants"), where("expense_id", "in", chunk));
           const pSnap = await getDocs(qPart);
           await Promise.all(pSnap.docs.map(d => deleteDoc(d.ref)));
         }
       }
-      // 2. Delete all expenses
       await Promise.all(expenses.map(e => deleteDoc(doc(db, "expenses", e.id))));
-      // 3. Delete the group document
       await deleteDoc(doc(db, "groups", group.id));
       router.push("/groups");
-    } catch (err) {
-      console.error("Error deleting group:", err);
-      setActionLoading(false);
-    }
+    } catch (e) { console.error(e); setActionLoading(false); }
   };
 
-  // ─── Group Image Upload (admin only) ──────────────────────────────────
   const handleGroupImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !group) return;
@@ -190,332 +137,208 @@ export default function GroupDetailPage() {
       const base64 = await compressImageToBase64(file, 400, 400, 0.8);
       await updateDoc(doc(db, "groups", group.id), { image_base64: base64 });
       setGroup((prev: any) => ({ ...prev, image_base64: base64 }));
-    } catch (err) {
-      console.error("Error uploading group image:", err);
-    } finally {
+    } catch (e) { console.error(e); } finally {
       setGroupImageLoading(false);
       if (groupImageInputRef.current) groupImageInputRef.current.value = "";
     }
   };
 
-  // ─── Data Fetching ─────────────────────────────────────────────────────────
   useEffect(() => {
     if (!user || !id) return;
-
     const fetchGroup = async () => {
       try {
-        const docRef = doc(db, "groups", id as string);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          const groupData = docSnap.data();
-          if (!groupData.members.includes(user.uid)) {
-            router.push("/groups");
-            return;
-          }
-          setGroup({ id: docSnap.id, ...groupData });
-        } else {
-          router.push("/groups");
-          return;
-        }
-      } catch (error) {
-        console.error("Error fetching group details:", error);
-      } finally {
-        setLoading(false);
-      }
+        const snap = await getDoc(doc(db, "groups", id as string));
+        if (snap.exists()) {
+          const g = snap.data();
+          if (!g.members.includes(user.uid)) { router.push("/groups"); return; }
+          setGroup({ id: snap.id, ...g });
+        } else { router.push("/groups"); return; }
+      } catch (e) { console.error(e); } finally { setLoading(false); }
     };
-
     fetchGroup();
 
-    // ⚠️ FIX: Remove orderBy to avoid requiring a composite Firestore index.
-    // We sort client-side by created_at after receiving the snapshot.
-    const q = query(
-      collection(db, "expenses"),
-      where("group_id", "==", id)
-    );
+    const q = query(collection(db, "expenses"), where("group_id", "==", id));
+    const unsub = onSnapshot(q, async (snapshot) => {
+      const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }))
+        .sort((a: any, b: any) => (b.created_at?.toMillis?.() ?? 0) - (a.created_at?.toMillis?.() ?? 0));
+      setExpenses(list);
 
-    const unsubscribe = onSnapshot(
-      q,
-      async (snapshot) => {
-        const expensesList = snapshot.docs
-          .map(d => ({ id: d.id, ...d.data() }))
-          // Sort descending by created_at client-side (handles pending writes too)
-          .sort((a: any, b: any) => {
-            const aTs = a.created_at?.toMillis?.() ?? a.created_at ?? 0;
-            const bTs = b.created_at?.toMillis?.() ?? b.created_at ?? 0;
-            return bTs - aTs;
-          });
-
-        setExpenses(expensesList);
-
-        if (expensesList.length > 0) {
-          const expenseIds = expensesList.map((e: any) => e.id);
-          const chunks: string[][] = [];
-          for (let i = 0; i < expenseIds.length; i += 10)
-            chunks.push(expenseIds.slice(i, i + 10));
-
-          let allParticipants: any[] = [];
-          for (const chunk of chunks) {
-            const qPart = query(
-              collection(db, "expense_participants"),
-              where("expense_id", "in", chunk)
-            );
-            const pSnap = await getDocs(qPart);
-            allParticipants = [...allParticipants, ...pSnap.docs.map((d: any) => d.data())];
-          }
-          setParticipants(allParticipants);
-        } else {
-          setParticipants([]);
+      if (list.length > 0) {
+        const expIds = list.map((e: any) => e.id);
+        const chunks: string[][] = [];
+        for (let i = 0; i < expIds.length; i += 10) chunks.push(expIds.slice(i, i + 10));
+        let allP: any[] = [];
+        for (const chunk of chunks) {
+          const pSnap = await getDocs(query(collection(db, "expense_participants"), where("expense_id", "in", chunk)));
+          allP = [...allP, ...pSnap.docs.map(d => d.data())];
         }
-      },
-      (error) => {
-        console.error("Snapshot error:", error);
-      }
-    );
+        setParticipants(allP);
+      } else { setParticipants([]); }
+    }, e => console.error(e));
 
     const fetchUsers = async () => {
       const uSnap = await getDocs(collection(db, "users"));
       const uMap: Record<string, any> = {};
-      uSnap.docs.forEach((d: any) => { uMap[d.id] = d.data(); });
+      uSnap.docs.forEach(d => { uMap[d.id] = d.data(); });
       setUsersMap(uMap);
     };
     fetchUsers();
+    return () => unsub();
+  }, [user, id, router]);
 
-    return () => unsubscribe();
-  }, [id, user, router]);
+  // ── Balance calculation ──
+  const memberBalances = (group?.members || []).map((uid: string) => {
+    const paid = expenses.filter(e => e.paid_by === uid).reduce((s: number, e: any) => s + (e.amount || 0), 0);
+    const owed = participants.filter(p => p.user_id === uid).reduce((s: number, p: any) => s + (p.share_amount || 0), 0);
+    return { userId: uid, amount: paid - owed };
+  });
+  const settlements = simplifyDebts(memberBalances);
 
-  // ─── Loading / Guard ───────────────────────────────────────────────────────
+  const inviteLink = typeof window !== "undefined" ? `${window.location.origin}/groups/join/${id}` : "";
+  const copyInvite = async () => {
+    try { await navigator.clipboard.writeText(inviteLink); setCopySuccess(true); setTimeout(() => setCopySuccess(false), 2000); } catch { }
+  };
+
+  const currencySymbol = group?.currency === "USD" ? "$" : group?.currency === "GBP" ? "£" : group?.currency === "CHF" ? "Fr" : "€";
+
   if (loading) {
     return (
       <ProtectedRoute>
         <Navbar />
-        <div className="flex h-[calc(100vh-64px)] items-center justify-center">
-          <div className="flex flex-col items-center gap-3">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            <p className="text-sm text-muted-foreground">Caricamento gruppo...</p>
-          </div>
-        </div>
+        <main className="container mx-auto max-w-2xl px-4 py-6 space-y-4">
+          {[1, 2, 3].map(i => <div key={i} className="skeleton h-20 rounded-2xl" />)}
+        </main>
       </ProtectedRoute>
     );
   }
 
   if (!group) return null;
 
-  // ─── Balances ──────────────────────────────────────────────────────────────
-  const totalGroupExpenses = expenses.reduce((sum, exp) => sum + (exp.amount || 0), 0);
-
-  const balancesMap: Record<string, number> = {};
-  group.members.forEach((uid: string) => { balancesMap[uid] = 0; });
-  expenses.forEach(exp => {
-    if (balancesMap[exp.paid_by] !== undefined) balancesMap[exp.paid_by] += exp.amount;
-  });
-  participants.forEach(p => {
-    if (balancesMap[p.user_id] !== undefined) balancesMap[p.user_id] -= p.share_amount;
-  });
-
-  const balancesArray = Object.keys(balancesMap).map(uid => ({ userId: uid, amount: balancesMap[uid] }));
-  const settlements = simplifyDebts(balancesArray);
-
   return (
     <ProtectedRoute>
       <Navbar />
-      <main className="container mx-auto max-w-4xl px-4 py-6 pb-32 md:pb-10 space-y-5 animate-fade-in">
+      <main className="container mx-auto max-w-2xl px-4 py-4 pb-28 md:pb-10 space-y-4 animate-fade-in">
 
-        {/* Top Bar */}
-        <div className="flex items-center justify-between">
-          <Link
-            href="/groups"
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Gruppi
-          </Link>
-          <div className="flex gap-2">
-            {/* Invite */}
-            <Dialog>
-              <DialogTrigger className="inline-flex items-center gap-2 h-9 px-3 text-sm font-medium rounded-xl border border-border/60 bg-background hover:bg-accent hover:text-accent-foreground transition-colors">
-                <LinkIcon className="h-4 w-4" />
-                Invita
-              </DialogTrigger>
-              <DialogContent className="rounded-3xl sm:max-w-md">
-                <DialogHeader>
-                  <DialogTitle>Invita in {group.name}</DialogTitle>
-                  <DialogDescription>Condividi questo link per far unire gli amici al gruppo.</DialogDescription>
-                </DialogHeader>
-                <div className="flex items-center gap-2 mt-4">
-                  <Input
-                    readOnly
-                    value={`${typeof window !== "undefined" ? window.location.origin : ""}/groups/join/${group.id}`}
-                    className="rounded-xl text-sm"
-                  />
-                  <Button
-                    className="rounded-xl shrink-0"
-                    onClick={() => {
-                      navigator.clipboard.writeText(`${window.location.origin}/groups/join/${group.id}`);
-                      alert("Copiato!");
-                    }}
-                  >
-                    Copia
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
+        {/* Back */}
+        <Link href="/groups" className="inline-flex items-center gap-1.5 text-sm text-[var(--text-dim)] hover:text-foreground transition-colors">
+          <ArrowLeft className="h-4 w-4" />Gruppi
+        </Link>
 
-            {/* Add Expense */}
-            <Button className="gap-2 rounded-xl shadow-md shadow-primary/20" onClick={() => setIsAddExpenseOpen(true)}>
-              <Plus className="h-4 w-4" />
-              <span className="hidden sm:inline">Aggiungi Spesa</span>
-              <span className="sm:hidden">Aggiungi</span>
-            </Button>
-          </div>
-        </div>
-
-        {/* Group Hero Card */}
-        <div className="relative overflow-hidden bg-card border border-border/60 rounded-3xl shadow-xl shadow-black/5">
-          <div className="gradient-hero absolute inset-0 opacity-10" />
-          <div className="relative z-10 p-6 flex flex-col sm:flex-row items-center sm:items-start gap-4 text-center sm:text-left">
-            {/* Group Avatar - clickable for admin to upload image */}
-            <div className="relative group/avatar flex-shrink-0">
-              <div className="h-16 w-16 rounded-2xl overflow-hidden shadow-lg shadow-primary/30">
-                {group.image_base64 ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={group.image_base64} alt={group.name} className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full gradient-primary flex items-center justify-center text-white font-bold text-2xl">
-                    {group.name.substring(0, 2).toUpperCase()}
-                  </div>
-                )}
+        {/* Group header */}
+        <div className="relative overflow-hidden rounded-2xl p-5"
+          style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+          <div className="absolute inset-0 bg-grid opacity-20 pointer-events-none" />
+          <div className="absolute -top-8 -right-8 w-36 h-36 pointer-events-none"
+            style={{ background: "radial-gradient(circle, rgba(34,197,94,0.12) 0%, transparent 70%)" }} />
+          <div className="relative z-10 flex items-center gap-4">
+            {/* Group image */}
+            <div className="relative flex-shrink-0">
+              <div className="h-14 w-14 rounded-2xl overflow-hidden flex items-center justify-center text-[#0a0a0b] text-lg font-bold"
+                style={{ background: group.image_base64 ? "transparent" : "#22c55e", border: "1px solid rgba(255,255,255,0.08)" }}>
+                {group.image_base64
+                  ? <img src={group.image_base64} alt={group.name} className="h-14 w-14 object-cover" />
+                  : group.name.slice(0, 2).toUpperCase()
+                }
               </div>
               {isAdmin && (
-                <>
-                  <button
-                    onClick={() => !groupImageLoading && groupImageInputRef.current?.click()}
-                    className="absolute inset-0 rounded-2xl bg-black/40 opacity-0 group-hover/avatar:opacity-100 transition-opacity flex items-center justify-center"
-                    title="Cambia immagine gruppo"
-                  >
-                    {groupImageLoading
-                      ? <Loader2 className="h-5 w-5 text-white animate-spin" />
-                      : <Camera className="h-5 w-5 text-white" />
-                    }
-                  </button>
-                  <input
-                    ref={groupImageInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="sr-only"
-                    onChange={handleGroupImageChange}
-                  />
-                </>
+                <button onClick={() => groupImageInputRef.current?.click()} disabled={groupImageLoading}
+                  className="absolute -bottom-1 -right-1 h-6 w-6 rounded-lg flex items-center justify-center"
+                  style={{ background: "#22c55e", border: "2px solid #0a0a0b" }}>
+                  {groupImageLoading ? <Loader2 className="h-3 w-3 animate-spin text-[#0a0a0b]" /> : <Camera className="h-3 w-3 text-[#0a0a0b]" />}
+                </button>
               )}
+              <input ref={groupImageInputRef} type="file" accept="image/*" className="hidden" onChange={handleGroupImageChange} />
             </div>
-            <div className="flex-1">
-              <h1 className="text-2xl font-bold text-foreground">{group.name}</h1>
-              <p className="text-muted-foreground text-sm mt-0.5">
-                {group.members.length} membri · {group.currency}
-              </p>
-              <div className="mt-3 inline-flex items-center gap-1.5 bg-primary/10 text-primary px-3 py-1 rounded-full text-sm font-semibold">
-                Totale: {totalGroupExpenses.toFixed(2)} {group.currency}
-              </div>
+            <div className="flex-1 min-w-0">
+              <h1 className="text-xl font-bold text-foreground truncate" style={{ fontFamily: "var(--font-display-var)" }}>{group.name}</h1>
+              <p className="text-sm text-[var(--text-dim)]">{group.members?.length || 1} membri · {group.currency}</p>
             </div>
-            {/* Leave Group */}
-            {!isAdmin && (
-              <button
-                onClick={() => setLeaveDialogOpen(true)}
-                className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-red-500 transition-colors mt-2 sm:mt-0"
-              >
-                <LogOut className="h-4 w-4" />
-                <span className="hidden sm:inline">Abbandona</span>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {/* Invite link */}
+              <button onClick={copyInvite}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all"
+                style={copySuccess
+                  ? { background: "var(--nav-active-bg)", border: "1px solid rgba(34,197,94,0.25)", color: "#22c55e" }
+                  : { background: "var(--nav-active-bg)", border: "1px solid var(--card-border)", color: "var(--text-dim)" }}>
+                {copySuccess ? <CheckCircle2 className="h-3.5 w-3.5" /> : <LinkIcon className="h-3.5 w-3.5" />}
+                {copySuccess ? "Copiato!" : "Invita"}
               </button>
-            )}
+              {/* Add expense */}
+              <button onClick={() => setIsAddExpenseOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-[#0a0a0b] btn-glow"
+                style={{ background: "#22c55e" }}>
+                <Plus className="h-3.5 w-3.5" />Spesa
+              </button>
+            </div>
           </div>
         </div>
 
         {/* Tabs */}
-        <Tabs defaultValue="expenses" className="w-full">
-          <TabsList className="w-full grid grid-cols-4 h-11 rounded-2xl bg-muted/70 p-1">
-            <TabsTrigger value="expenses" className="rounded-xl text-sm font-medium data-[state=active]:bg-card data-[state=active]:shadow-sm data-[state=active]:text-primary">
-              Spese
-            </TabsTrigger>
-            <TabsTrigger value="balances" className="rounded-xl text-sm font-medium data-[state=active]:bg-card data-[state=active]:shadow-sm data-[state=active]:text-primary">
-              Saldi
-            </TabsTrigger>
-            <TabsTrigger value="settle" className="rounded-xl text-sm font-medium data-[state=active]:bg-card data-[state=active]:shadow-sm data-[state=active]:text-primary">
-              Pareggia
-            </TabsTrigger>
-            <TabsTrigger value="members" className="rounded-xl text-sm font-medium data-[state=active]:bg-card data-[state=active]:shadow-sm data-[state=active]:text-primary">
-              Membri
-            </TabsTrigger>
-          </TabsList>
+        <div className="flex gap-1 p-1 rounded-2xl" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+          {TABS.map(tab => (
+            <button key={tab} onClick={() => setActiveTab(tab)}
+              className="flex-1 py-2.5 text-sm font-semibold rounded-xl transition-all"
+              style={activeTab === tab
+                ? { background: "#22c55e", color: "#0a0a0b" }
+                : { color: "var(--text-dim)" }}>
+              {tab}
+            </button>
+          ))}
+        </div>
 
-          {/* ── Expenses Tab ───────────────────────────────────────────────── */}
-          <TabsContent value="expenses" className="space-y-3 mt-4">
+        {/* ── SPESE TAB ── */}
+        {activeTab === "Spese" && (
+          <div>
             {expenses.length === 0 ? (
-              <div className="bg-card border border-dashed border-border rounded-3xl p-10 flex flex-col items-center text-center gap-3">
-                <div className="h-14 w-14 rounded-2xl bg-muted flex items-center justify-center">
-                  <Receipt className="h-7 w-7 text-muted-foreground" />
+              <div className="flex flex-col items-center py-14 text-center rounded-2xl"
+                style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+                <div className="h-14 w-14 rounded-2xl flex items-center justify-center mb-4"
+                  style={{ background: "var(--nav-active-bg)", border: "1px solid var(--card-border)" }}>
+                  <Receipt className="h-7 w-7 text-[var(--text-dim)]" />
                 </div>
-                <div>
-                  <h3 className="font-semibold text-foreground">Nessuna spesa ancora</h3>
-                  <p className="text-sm text-muted-foreground mt-0.5 max-w-xs">Inizia a tracciare le spese condivise del gruppo.</p>
-                </div>
-                <Button onClick={() => setIsAddExpenseOpen(true)} className="rounded-xl gap-2">
-                  <Plus className="h-4 w-4" />
-                  Aggiungi la prima spesa
-                </Button>
+                <p className="text-base font-bold text-foreground mb-1">Nessuna spesa</p>
+                <p className="text-sm text-[var(--text-dim)] mb-5">Aggiungi la prima spesa del gruppo</p>
+                <button onClick={() => setIsAddExpenseOpen(true)}
+                  className="px-5 py-2.5 rounded-xl text-sm font-bold text-[#0a0a0b] btn-glow flex items-center gap-2" style={{ background: "#22c55e" }}>
+                  <Plus className="h-4 w-4" />Aggiungi spesa
+                </button>
               </div>
             ) : (
-              <div className="space-y-2.5">
-                {expenses.map((expense) => {
-                  const canDelete = expense.paid_by === user?.uid || isAdmin;
-                  const hasReceipt = !!expense.receipt_base64;
+              <div className="rounded-2xl overflow-hidden" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+                {expenses.map((exp, i) => {
+                  const myShare = participants.find(p => p.expense_id === exp.id && p.user_id === user?.uid)?.share_amount;
+                  const iPaid = exp.paid_by === user?.uid;
+                  const canDelete = isAdmin || exp.paid_by === user?.uid;
                   return (
-                    <div key={expense.id} className="bg-card border border-border/60 rounded-2xl p-4 flex items-center justify-between hover:shadow-md transition-all duration-200 shadow-sm group">
-                      <div
-                        className="flex gap-3 items-center min-w-0 flex-1 cursor-pointer"
-                        onClick={() => hasReceipt && setReceiptToView(expense.receipt_base64)}
-                      >
-                        <div className="relative h-11 w-11 flex-shrink-0">
-                          <div className="h-11 w-11 rounded-xl bg-primary/10 flex items-center justify-center text-xl">
-                            {CATEGORY_ICONS[expense.category] || "💸"}
-                          </div>
-                          {hasReceipt && (
-                            <div className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-primary flex items-center justify-center shadow-sm" title="Scontrino allegato">
-                              <ScanLine className="h-3 w-3 text-white" />
-                            </div>
-                          )}
-                        </div>
-                        <div className="min-w-0">
-                          <h4 className="font-semibold text-foreground text-sm truncate">{expense.description}</h4>
-                          <div className="flex items-center text-xs text-muted-foreground gap-1.5 mt-0.5">
-                            <span>
-                              {expense.created_at?.toDate
-                                ? expense.created_at.toDate().toLocaleDateString("it-IT")
-                                : new Date().toLocaleDateString("it-IT")}
-                            </span>
-                            <span>·</span>
-                            <span>
-                              Pagato da{" "}
-                              <span className="font-medium text-foreground">
-                                {getUserName(expense.paid_by)}
-                              </span>
-                            </span>
-                            {hasReceipt && (
-                              <span className="text-primary font-medium">· 📎 scontrino</span>
-                            )}
-                          </div>
-                        </div>
+                    <div key={exp.id} className={clsx("flex items-center gap-3 px-4 py-3 hover:bg-[rgba(255,255,255,0.02)] transition-all group", i < expenses.length - 1 && "border-b border-[rgba(255,255,255,0.05)]")}>
+                      <div className="h-10 w-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0"
+                        style={{ background: "rgba(255,255,255,0.04)" }}>
+                        {CATEGORY_ICONS[exp.category] || "💸"}
                       </div>
-                      <div className="flex items-center gap-2 flex-shrink-0 ml-3">
-                        <div className="text-right">
-                          <p className="font-bold text-foreground text-base">{Number(expense.amount).toFixed(2)}</p>
-                          <p className="text-[10px] text-muted-foreground font-mono">{expense.currency}</p>
-                        </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-foreground truncate">{exp.description}</p>
+                        <p className="text-xs text-[var(--text-dim)]">{getUserName(exp.paid_by)} ha pagato</p>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <p className="text-sm font-bold text-foreground tabular">{currencySymbol}{(exp.amount || 0).toFixed(2)}</p>
+                        {myShare != null && (
+                          <p className="text-xs tabular" style={{ color: iPaid ? "#22c55e" : "#f97316" }}>
+                            {iPaid ? "+" : "-"}{currencySymbol}{Math.abs(myShare).toFixed(2)} tu
+                          </p>
+                        )}
+                      </div>
+                      {/* Receipt + delete */}
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                        {exp.receipt_base64 && (
+                          <button onClick={() => setReceiptToView(exp.receipt_base64)}
+                            className="h-7 w-7 rounded-lg flex items-center justify-center text-[#505058] hover:text-[#22c55e] hover:bg-[rgba(34,197,94,0.08)] transition-all">
+                            <ScanLine className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                         {canDelete && (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); setExpenseToDelete(expense); }}
-                            className="p-2 rounded-xl text-muted-foreground hover:text-red-500 hover:bg-red-500/10 active:text-red-500 active:bg-red-500/10 transition-all ml-1"
-                            title="Elimina spesa"
-                          >
-                            <Trash2 className="h-4 w-4" />
+                          <button onClick={() => setExpenseToDelete(exp)}
+                            className="h-7 w-7 rounded-lg flex items-center justify-center text-[#505058] hover:text-[#f97316] hover:bg-[rgba(249,115,22,0.08)] transition-all">
+                            <Trash2 className="h-3.5 w-3.5" />
                           </button>
                         )}
                       </div>
@@ -524,375 +347,264 @@ export default function GroupDetailPage() {
                 })}
               </div>
             )}
-          </TabsContent>
+          </div>
+        )}
 
-          {/* ── Balances Tab ───────────────────────────────────────────────── */}
-          <TabsContent value="balances" className="space-y-2.5 mt-4">
-            {balancesArray.every(b => Math.abs(b.amount) < 0.01) ? (
-              <div className="bg-card border border-border/60 rounded-3xl p-10 flex flex-col items-center text-center gap-3">
-                <div className="h-14 w-14 rounded-2xl bg-emerald-500/10 flex items-center justify-center">
-                  <CheckCircle2 className="h-7 w-7 text-emerald-500" />
+        {/* ── SALDI TAB ── */}
+        {activeTab === "Saldi" && (
+          <div className="space-y-3">
+            {/* My balance */}
+            {(() => {
+              const myBal = memberBalances.find((b: any) => b.userId === user?.uid);
+              const bal = myBal?.amount || 0;
+              const pos = bal > 0.01; const neg = bal < -0.01;
+              return (
+                <div className="p-5 rounded-2xl" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+                  <p className="text-xs text-[var(--text-dim)] uppercase tracking-wider mb-1">Il tuo saldo in questo gruppo</p>
+                  <p className="text-3xl font-bold tabular" style={{ fontFamily: "var(--font-display-var)", color: pos ? "#22c55e" : neg ? "#f97316" : "var(--text-dim)" }}>
+                    {pos ? "+" : neg ? "-" : ""}{currencySymbol}{Math.abs(bal).toFixed(2)}
+                  </p>
+                  <p className="text-sm text-[var(--text-dim)] mt-1">
+                    {pos ? "Gli altri ti devono questo importo" : neg ? "Devi questo importo agli altri" : "Sei in pari! 🎉"}
+                  </p>
                 </div>
-                <div>
-                  <h3 className="font-semibold text-foreground">Tutto in pari!</h3>
-                  <p className="text-sm text-muted-foreground mt-0.5">Tutti i conti sono a zero.</p>
-                </div>
-              </div>
-            ) : (
-              balancesArray.map((balance) => {
-                const isUser = balance.userId === user?.uid;
-                const isOwed = balance.amount > 0.01;
-                if (Math.abs(balance.amount) < 0.01) return null;
+              );
+            })()}
+
+            {/* All balances */}
+            <div className="rounded-2xl overflow-hidden" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+              <p className="px-4 py-3 text-xs font-bold text-[var(--text-dim)] uppercase tracking-wider border-b border-[var(--card-border)]">
+                Saldo per membro
+              </p>
+              {memberBalances.map((b: any, i: number) => {
+                const pos = b.amount > 0.01; const neg = b.amount < -0.01;
                 return (
-                  <div key={balance.userId} className="bg-card border border-border/60 rounded-2xl p-4 flex items-center justify-between shadow-sm">
-                    <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-xl bg-muted flex items-center justify-center font-bold text-sm text-muted-foreground">
-                        {getInitials(balance.userId)}
-                      </div>
-                      <span className="font-semibold text-foreground text-sm">
-                        {isUser ? "Tu" : getUserName(balance.userId)}
-                      </span>
+                  <div key={b.userId} className={clsx("flex items-center gap-3 px-4 py-3", i < memberBalances.length - 1 && "border-b border-[rgba(255,255,255,0.05)]")}>
+                    <div className="h-9 w-9 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0 text-[#22c55e]"
+                      style={{ background: "var(--nav-active-bg)" }}>
+                      {getInitials(b.userId)}
                     </div>
-                    <div className={`text-right px-3 py-1.5 rounded-xl ${isOwed ? "bg-emerald-500/10 text-emerald-600" : "bg-red-500/10 text-red-600"}`}>
-                      <p className="text-xs font-medium">{isOwed ? "deve ricevere" : "deve"}</p>
-                      <p className="font-bold">{Math.abs(balance.amount).toFixed(2)} {group.currency}</p>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </TabsContent>
-
-          {/* ── Settle Up Tab ──────────────────────────────────────────────── */}
-          <TabsContent value="settle" className="space-y-2.5 mt-4">
-            {settlements.length === 0 ? (
-              <div className="bg-card border border-border/60 rounded-3xl p-10 flex flex-col items-center text-center gap-3">
-                <div className="h-14 w-14 rounded-2xl bg-emerald-500/10 flex items-center justify-center">
-                  <CheckCircle2 className="h-7 w-7 text-emerald-500" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-foreground">Nessun rimborso necessario!</h3>
-                  <p className="text-sm text-muted-foreground mt-0.5">Tutti i conti sono in pari.</p>
-                </div>
-              </div>
-            ) : (
-              settlements.map((tx, idx) => {
-                const isFromMe = tx.from === user?.uid;
-                const isToMe = tx.to === user?.uid;
-                return (
-                  <div key={idx} className="bg-card border border-border/60 rounded-2xl p-4 flex items-center justify-between shadow-sm gap-4">
-                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <div className={`h-9 w-9 rounded-xl flex items-center justify-center flex-shrink-0 font-bold text-sm ${isFromMe ? "bg-red-500/10 text-red-600" : "bg-muted text-muted-foreground"}`}>
-                        {getInitials(tx.from)}
-                      </div>
-                      <div className="flex items-center gap-1.5 text-sm min-w-0 flex-wrap">
-                        <span className={`font-semibold ${isFromMe ? "text-red-600" : "text-foreground"}`}>
-                          {isFromMe ? "Tu" : getUserName(tx.from)}
-                        </span>
-                        <span className="text-muted-foreground">→</span>
-                        <span className={`font-semibold ${isToMe ? "text-emerald-600" : "text-foreground"}`}>
-                          {isToMe ? "tu" : getUserName(tx.to)}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="bg-primary/10 text-primary px-4 py-2 rounded-xl font-bold text-sm flex-shrink-0">
-                      {tx.amount.toFixed(2)} {group.currency}
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </TabsContent>
-
-          {/* ── Members Tab ────────────────────────────────────────────────── */}
-          <TabsContent value="members" className="space-y-2.5 mt-4">
-            {isAdmin && (
-              <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/20 rounded-2xl px-4 py-2.5 text-sm text-amber-700">
-                <AlertTriangle className="h-4 w-4 flex-shrink-0" />
-                <p>Puoi rimuovere membri e promuovere altri Admin con 👑</p>
-              </div>
-            )}
-
-            {/* Delete group — solo admin creatore */}
-            {group.created_by === user?.uid && (
-              <button
-                onClick={() => setDeleteGroupDialog(true)}
-                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-2xl border border-red-200 bg-red-500/5 text-red-600 hover:bg-red-500/10 text-sm font-medium transition-all"
-              >
-                <Trash2 className="h-4 w-4" />
-                Elimina gruppo
-              </button>
-            )}
-
-            <div className="space-y-2">
-              {group.members.map((uid: string) => {
-                const isCurrentUser = uid === user?.uid;
-                const memberData = usersMap[uid];
-                const name = isCurrentUser ? "Tu" : (memberData?.name || memberData?.email?.split("@")[0] || "Utente");
-                const email = memberData?.email || "";
-                const memberInitials = name === "Tu" ? "T" : name.charAt(0).toUpperCase();
-                const memberIsAdmin = isMemberAdmin(uid);
-
-                return (
-                  <div key={uid} className="bg-card border border-border/60 rounded-2xl p-4 flex items-center gap-3 shadow-sm">
-                    <div className={`h-11 w-11 rounded-xl overflow-hidden flex-shrink-0 ${isCurrentUser ? "shadow-md shadow-primary/30" : ""
-                      }`}>
-                      {memberData?.avatar_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={memberData.avatar_url}
-                          alt={name}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className={`w-full h-full flex items-center justify-center font-bold text-sm ${isCurrentUser ? "gradient-primary text-white" : "bg-muted text-muted-foreground"
-                          }`}>
-                          {memberInitials}
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="font-semibold text-foreground text-sm">{name}</p>
-                        {isCurrentUser && (
-                          <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium">Tu</span>
-                        )}
-                        {memberIsAdmin && (
-                          <span className="text-xs bg-amber-500/10 text-amber-600 px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
-                            <Crown className="h-3 w-3" /> Admin
-                          </span>
-                        )}
-                      </div>
-                      {email && <p className="text-xs text-muted-foreground truncate">{email}</p>}
-                    </div>
-
-                    <div className="flex gap-1 flex-shrink-0">
-                      {/* Admin can promote non-admin members */}
-                      {isAdmin && !isCurrentUser && !memberIsAdmin && (
-                        <button
-                          onClick={() => setMemberToPromote(uid)}
-                          className="p-2 rounded-xl text-muted-foreground hover:text-amber-500 hover:bg-amber-500/10 active:text-amber-500 active:bg-amber-500/10 transition-all"
-                          title="Promuovi ad Admin"
-                        >
-                          <Crown className="h-4 w-4" />
-                        </button>
-                      )}
-                      {/* Admin can remove non-admin members (not themselves) */}
-                      {isAdmin && !isCurrentUser && !memberIsAdmin && (
-                        <button
-                          onClick={() => setMemberToRemove(uid)}
-                          className="p-2 rounded-xl text-muted-foreground hover:text-red-500 hover:bg-red-500/10 active:text-red-500 active:bg-red-500/10 transition-all"
-                          title="Rimuovi dal gruppo"
-                        >
-                          <UserMinus className="h-4 w-4" />
-                        </button>
-                      )}
-                      {/* Non-admin current user can leave */}
-                      {isCurrentUser && !isAdmin && (
-                        <button
-                          onClick={() => setLeaveDialogOpen(true)}
-                          className="p-2 rounded-xl text-muted-foreground hover:text-red-500 hover:bg-red-500/10 active:text-red-500 active:bg-red-500/10 transition-all"
-                          title="Abbandona gruppo"
-                        >
-                          <LogOut className="h-4 w-4" />
-                        </button>
-                      )}
-                    </div>
+                    <p className="flex-1 text-sm font-medium text-foreground">{getUserName(b.userId)}</p>
+                    <p className="text-sm font-bold tabular" style={{ color: pos ? "#22c55e" : neg ? "#f97316" : "var(--text-dim)" }}>
+                      {pos ? "+" : neg ? "-" : ""}{currencySymbol}{Math.abs(b.amount).toFixed(2)}
+                    </p>
                   </div>
                 );
               })}
             </div>
-          </TabsContent>
-        </Tabs>
 
-        {/* ── Add Expense Modal ──────────────────────────────────────────────── */}
-        {group && (
-          <AddExpenseModal
-            groupId={group.id}
-            groupCurrency={group.currency}
-            members={group.members}
-            usersMap={usersMap}
-            isOpen={isAddExpenseOpen}
-            onClose={() => setIsAddExpenseOpen(false)}
-          />
-        )}
-
-        {/* ── Confirm: Delete Expense ────────────────────────────────────────── */}
-        <Dialog open={!!expenseToDelete} onOpenChange={(o) => !o && setExpenseToDelete(null)}>
-          <DialogContent className="rounded-3xl sm:max-w-sm">
-            <DialogHeader>
-              <div className="h-12 w-12 rounded-2xl bg-red-500/10 flex items-center justify-center mb-3">
-                <Trash2 className="h-6 w-6 text-red-500" />
+            {/* Settlements */}
+            {settlements.length > 0 && (
+              <div className="rounded-2xl overflow-hidden" style={{ background: "#111114", border: "1px solid rgba(255,255,255,0.07)" }}>
+                <p className="px-4 py-3 text-xs font-bold text-[#70707a] uppercase tracking-wider" style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                  Rimborsi ottimizzati
+                </p>
+                {settlements.map((s, i) => (
+                  <div key={i} className={clsx("flex items-center gap-3 px-4 py-3", i < settlements.length - 1 && "border-b border-[rgba(255,255,255,0.05)]")}>
+                    <div className="h-8 w-8 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0"
+                      style={{ background: "rgba(249,115,22,0.1)", color: "#f97316" }}>
+                      {getInitials(s.from)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-foreground">
+                        <span className="font-semibold">{getUserName(s.from)}</span>
+                        <span className="text-[var(--text-dim)] mx-1.5">→</span>
+                        <span className="font-semibold">{getUserName(s.to)}</span>
+                      </p>
+                    </div>
+                    <span className="text-sm font-bold tabular text-[#22c55e]">
+                      {currencySymbol}{s.amount.toFixed(2)}
+                    </span>
+                  </div>
+                ))}
               </div>
-              <DialogTitle>Elimina spesa</DialogTitle>
-              <DialogDescription>
-                Sei sicuro di voler eliminare{" "}
-                <strong>"{expenseToDelete?.description}"</strong>?
-                Questa azione non può essere annullata.
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter className="gap-2 mt-2">
-              <Button variant="outline" className="flex-1 rounded-xl" onClick={() => setExpenseToDelete(null)} disabled={actionLoading}>
-                Annulla
-              </Button>
-              <Button
-                className="flex-1 rounded-xl bg-red-500 hover:bg-red-600 text-white"
-                onClick={handleDeleteExpense}
-                disabled={actionLoading}
-              >
-                {actionLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Elimina
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        {/* ── Confirm: Remove Member ─────────────────────────────────────────── */}
-        <Dialog open={!!memberToRemove} onOpenChange={(o) => !o && setMemberToRemove(null)}>
-          <DialogContent className="rounded-3xl sm:max-w-sm">
-            <DialogHeader>
-              <div className="h-12 w-12 rounded-2xl bg-red-500/10 flex items-center justify-center mb-3">
-                <UserMinus className="h-6 w-6 text-red-500" />
+            )}
+            {settlements.length === 0 && expenses.length > 0 && (
+              <div className="flex items-center gap-3 p-4 rounded-2xl" style={{ background: "rgba(34,197,94,0.06)", border: "1px solid rgba(34,197,94,0.15)" }}>
+                <CheckCircle2 className="h-5 w-5 text-[#22c55e] flex-shrink-0" />
+                <p className="text-sm font-medium text-[#22c55e]">Tutti i conti sono in pari! 🎉</p>
               </div>
-              <DialogTitle>Rimuovi membro</DialogTitle>
-              <DialogDescription>
-                Sei sicuro di voler rimuovere{" "}
-                <strong>{memberToRemove ? getUserName(memberToRemove) : ""}</strong>{" "}
-                dal gruppo? Il membro perderà l'accesso al gruppo.
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter className="gap-2 mt-2">
-              <Button variant="outline" className="flex-1 rounded-xl" onClick={() => setMemberToRemove(null)} disabled={actionLoading}>
-                Annulla
-              </Button>
-              <Button
-                className="flex-1 rounded-xl bg-red-500 hover:bg-red-600 text-white"
-                onClick={handleRemoveMember}
-                disabled={actionLoading}
-              >
-                {actionLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Rimuovi
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        {/* ── Confirm: Leave Group ───────────────────────────────────────────── */}
-        <Dialog open={leaveDialogOpen} onOpenChange={setLeaveDialogOpen}>
-          <DialogContent className="rounded-3xl sm:max-w-sm">
-            <DialogHeader>
-              <div className="h-12 w-12 rounded-2xl bg-red-500/10 flex items-center justify-center mb-3">
-                <LogOut className="h-6 w-6 text-red-500" />
-              </div>
-              <DialogTitle>Abbandona gruppo</DialogTitle>
-              <DialogDescription>
-                Sei sicuro di voler abbandonare <strong>"{group?.name}"</strong>?
-                Dovrai essere reinvitato per rientrare.
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter className="gap-2 mt-2">
-              <Button variant="outline" className="flex-1 rounded-xl" onClick={() => setLeaveDialogOpen(false)} disabled={actionLoading}>
-                Annulla
-              </Button>
-              <Button
-                className="flex-1 rounded-xl bg-red-500 hover:bg-red-600 text-white"
-                onClick={handleLeaveGroup}
-                disabled={actionLoading}
-              >
-                {actionLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Abbandona
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        {/* ── Confirm: Promote Member ───────────────────────────────────────── */}
-        <Dialog open={!!memberToPromote} onOpenChange={(o) => !o && setMemberToPromote(null)}>
-          <DialogContent className="rounded-3xl sm:max-w-sm">
-            <DialogHeader>
-              <div className="h-12 w-12 rounded-2xl bg-amber-500/10 flex items-center justify-center mb-3">
-                <Crown className="h-6 w-6 text-amber-500" />
-              </div>
-              <DialogTitle>Promuovi ad Admin</DialogTitle>
-              <DialogDescription>
-                Vuoi promuovere <strong>{memberToPromote ? getUserName(memberToPromote) : ""}</strong> ad
-                amministratore? Potrà rimuovere membri e promuovere altri utenti.
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter className="gap-2 mt-2">
-              <Button variant="outline" className="flex-1 rounded-xl" onClick={() => setMemberToPromote(null)} disabled={actionLoading}>
-                Annulla
-              </Button>
-              <Button
-                className="flex-1 rounded-xl bg-amber-500 hover:bg-amber-600 text-white"
-                onClick={handlePromoteMember}
-                disabled={actionLoading}
-              >
-                {actionLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                👑 Promuovi
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        {/* ── Confirm: Delete Group ─────────────────────────────────────────── */}
-        <Dialog open={deleteGroupDialog} onOpenChange={(o) => !o && setDeleteGroupDialog(false)}>
-          <DialogContent className="rounded-3xl sm:max-w-sm">
-            <DialogHeader>
-              <div className="h-12 w-12 rounded-2xl bg-red-500/10 flex items-center justify-center mb-3">
-                <Trash2 className="h-6 w-6 text-red-500" />
-              </div>
-              <DialogTitle>Elimina gruppo</DialogTitle>
-              <DialogDescription>
-                Sei sicuro di voler eliminare <strong>"{group?.name}"</strong>?
-                Verranno eliminate anche tutte le spese. Questa azione è <strong>irreversibile</strong>.
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter className="gap-2 mt-2">
-              <Button variant="outline" className="flex-1 rounded-xl" onClick={() => setDeleteGroupDialog(false)} disabled={actionLoading}>
-                Annulla
-              </Button>
-              <Button
-                className="flex-1 rounded-xl bg-red-500 hover:bg-red-600 text-white"
-                onClick={handleDeleteGroup}
-                disabled={actionLoading}
-              >
-                {actionLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Elimina tutto
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        {/* ── Receipt Lightbox ───────────────────────────────────────────────── */}
-        {receiptToView && (
-          <div
-            className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4"
-            onClick={() => setReceiptToView(null)}
-          >
-            <div className="relative max-w-lg w-full" onClick={(e) => e.stopPropagation()}>
-              <button
-                onClick={() => setReceiptToView(null)}
-                className="absolute -top-12 right-0 h-10 w-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
-              >
-                <X className="h-5 w-5" />
-              </button>
-              <div className="bg-card rounded-3xl overflow-hidden shadow-2xl">
-                <div className="px-4 pt-4 pb-2 border-b border-border/60">
-                  <p className="font-semibold text-foreground text-sm">📎 Foto Scontrino</p>
-                </div>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={receiptToView}
-                  alt="Scontrino"
-                  className="w-full max-h-[70vh] object-contain"
-                />
-              </div>
-            </div>
+            )}
           </div>
         )}
 
+        {/* ── MEMBRI TAB ── */}
+        {activeTab === "Membri" && (
+          <div className="space-y-3">
+            <div className="rounded-2xl overflow-hidden" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+              {group.members.map((uid: string, i: number) => (
+                <div key={uid} className={clsx("flex items-center gap-3 px-4 py-3", i < group.members.length - 1 && "border-b border-[rgba(255,255,255,0.05)]")}>
+                  <div className="h-10 w-10 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0"
+                    style={{ background: "rgba(34,197,94,0.1)", color: "#22c55e" }}>
+                    {usersMap[uid]?.avatar_url
+                      ? <img src={usersMap[uid].avatar_url} alt="" className="h-10 w-10 rounded-xl object-cover" />
+                      : getInitials(uid)
+                    }
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-semibold text-foreground truncate">{getUserName(uid)}</p>
+                      {isMemberAdmin(uid) && (
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md flex-shrink-0 flex items-center gap-1"
+                          style={{ background: "var(--nav-active-bg)", color: "#22c55e", border: "1px solid rgba(34,197,94,0.2)" }}>
+                          <Crown className="h-2.5 w-2.5" />Admin
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-[var(--text-dim)] truncate">{usersMap[uid]?.email}</p>
+                  </div>
+                  {isAdmin && uid !== user?.uid && (
+                    <div className="flex items-center gap-1">
+                      {!isMemberAdmin(uid) && (
+                        <button onClick={() => setMemberToPromote(uid)}
+                          className="h-8 w-8 rounded-lg flex items-center justify-center text-[var(--text-dim)] hover:text-[#22c55e] hover:bg-[rgba(34,197,94,0.08)] transition-all">
+                          <Crown className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                      <button onClick={() => setMemberToRemove(uid)}
+                        className="h-8 w-8 rounded-lg flex items-center justify-center text-[var(--text-dim)] hover:text-[#f97316] hover:bg-[rgba(249,115,22,0.08)] transition-all">
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Invite + leave/delete */}
+            <button onClick={copyInvite}
+              className="w-full py-3 rounded-2xl text-sm font-semibold flex items-center justify-center gap-2 transition-all"
+              style={copySuccess
+                ? { background: "var(--nav-active-bg)", border: "1px solid rgba(34,197,94,0.25)", color: "#22c55e" }
+                : { background: "var(--card-bg)", border: "1px solid var(--card-border)", color: "var(--text-dim)" }}>
+              {copySuccess ? <CheckCircle2 className="h-4 w-4" /> : <LinkIcon className="h-4 w-4" />}
+              {copySuccess ? "Link copiato!" : "Copia link d'invito"}
+            </button>
+
+            {isAdmin ? (
+              <button onClick={() => setDeleteGroupDialog(true)}
+                className="w-full py-3 rounded-2xl text-sm font-semibold flex items-center justify-center gap-2 transition-all"
+                style={{ background: "rgba(249,115,22,0.07)", border: "1px solid rgba(249,115,22,0.15)", color: "#f97316" }}>
+                <Trash2 className="h-4 w-4" />Elimina gruppo
+              </button>
+            ) : (
+              <button onClick={() => setLeaveDialogOpen(true)}
+                className="w-full py-3 rounded-2xl text-sm font-semibold flex items-center justify-center gap-2 transition-all"
+                style={{ background: "rgba(249,115,22,0.07)", border: "1px solid rgba(249,115,22,0.15)", color: "#f97316" }}>
+                <LogOut className="h-4 w-4" />Abbandona gruppo
+              </button>
+            )}
+          </div>
+        )}
       </main>
+
+      {/* ── AddExpenseModal ── */}
+      <AddExpenseModal
+        groupId={id as string} groupCurrency={group.currency || "EUR"}
+        isOpen={isAddExpenseOpen} onClose={() => setIsAddExpenseOpen(false)}
+        members={group.members || []} usersMap={usersMap}
+      />
+
+      {/* ── Receipt viewer ── */}
+      {receiptToView && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.85)", backdropFilter: "blur(10px)" }}
+          onClick={() => setReceiptToView(null)}>
+          <div className="relative max-w-sm w-full" onClick={e => e.stopPropagation()}>
+            <button onClick={() => setReceiptToView(null)}
+              className="absolute -top-3 -right-3 h-8 w-8 rounded-full flex items-center justify-center z-10"
+              style={{ background: "#111114", border: "1px solid rgba(255,255,255,0.1)", color: "#f0f0ee" }}>
+              <X className="h-4 w-4" />
+            </button>
+            <img src={receiptToView} alt="Scontrino" className="w-full rounded-2xl object-contain" style={{ maxHeight: "80dvh" }} />
+          </div>
+        </div>
+      )}
+
+      {/* ── Confirm modals ── */}
+      {(expenseToDelete || memberToRemove || leaveDialogOpen || memberToPromote || deleteGroupDialog) && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.7)", backdropFilter: "blur(8px)" }}>
+          <div className="w-full max-w-sm rounded-2xl p-6 animate-fade-in"
+            style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+
+            {expenseToDelete && (
+              <>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="h-10 w-10 rounded-xl flex items-center justify-center" style={{ background: "rgba(249,115,22,0.1)", border: "1px solid rgba(249,115,22,0.2)" }}>
+                    <Trash2 className="h-5 w-5 text-[#f97316]" />
+                  </div>
+                  <div><h3 className="text-base font-bold text-[#f0f0ee]">Elimina spesa</h3><p className="text-xs text-[#70707a]">Operazione irreversibile</p></div>
+                </div>
+                <p className="text-sm text-[#a0a0a8] mb-5">Vuoi eliminare <span className="font-semibold text-[#f0f0ee]">{expenseToDelete.description}</span>?</p>
+                <div className="flex gap-3">
+                  <button onClick={() => setExpenseToDelete(null)} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-[var(--text-dim)]" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>Annulla</button>
+                  <button onClick={handleDeleteExpense} disabled={actionLoading} className="flex-1 py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2" style={{ background: "rgba(249,115,22,0.15)", border: "1px solid rgba(249,115,22,0.25)", color: "#f97316" }}>
+                    {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Trash2 className="h-4 w-4" />Elimina</>}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {memberToRemove && (
+              <>
+                <h3 className="text-base font-bold text-[#f0f0ee] mb-2">Rimuovi membro</h3>
+                <p className="text-sm text-[#a0a0a8] mb-5">Vuoi rimuovere <span className="font-semibold text-[#f0f0ee]">{getUserName(memberToRemove)}</span> dal gruppo?</p>
+                <div className="flex gap-3">
+                  <button onClick={() => setMemberToRemove(null)} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-[#a0a0a8]" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>Annulla</button>
+                  <button onClick={handleRemoveMember} disabled={actionLoading} className="flex-1 py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2" style={{ background: "rgba(249,115,22,0.15)", border: "1px solid rgba(249,115,22,0.25)", color: "#f97316" }}>
+                    {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Rimuovi"}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {leaveDialogOpen && (
+              <>
+                <h3 className="text-base font-bold text-[#f0f0ee] mb-2">Abbandona gruppo</h3>
+                <p className="text-sm text-[#a0a0a8] mb-5">Non potrai più vedere le spese di <span className="font-semibold text-[#f0f0ee]">{group.name}</span>.</p>
+                <div className="flex gap-3">
+                  <button onClick={() => setLeaveDialogOpen(false)} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-[#a0a0a8]" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>Annulla</button>
+                  <button onClick={handleLeaveGroup} disabled={actionLoading} className="flex-1 py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2" style={{ background: "rgba(249,115,22,0.15)", border: "1px solid rgba(249,115,22,0.25)", color: "#f97316" }}>
+                    {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <><LogOut className="h-4 w-4" />Abbandona</>}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {memberToPromote && (
+              <>
+                <h3 className="text-base font-bold text-[#f0f0ee] mb-2">Promuovi ad Admin</h3>
+                <p className="text-sm text-[#a0a0a8] mb-5">Vuoi rendere <span className="font-semibold text-[#f0f0ee]">{getUserName(memberToPromote)}</span> amministratore?</p>
+                <div className="flex gap-3">
+                  <button onClick={() => setMemberToPromote(null)} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-[var(--text-dim)]" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>Annulla</button>
+                  <button onClick={handlePromoteMember} disabled={actionLoading} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-foreground flex items-center justify-center gap-2 btn-glow" style={{ background: "#22c55e" }}>
+                    {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Crown className="h-4 w-4" />Promuovi</>}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {deleteGroupDialog && (
+              <>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="h-10 w-10 rounded-xl flex items-center justify-center" style={{ background: "rgba(249,115,22,0.1)", border: "1px solid rgba(249,115,22,0.2)" }}>
+                    <AlertTriangle className="h-5 w-5 text-[#f97316]" />
+                  </div>
+                  <div><h3 className="text-base font-bold text-[#f0f0ee]">Elimina gruppo</h3><p className="text-xs text-[#70707a]">Operazione irreversibile</p></div>
+                </div>
+                <p className="text-sm text-[#a0a0a8] mb-5">Verranno eliminate tutte le spese di <span className="font-semibold text-[#f0f0ee]">{group.name}</span>.</p>
+                <div className="flex gap-3">
+                  <button onClick={() => setDeleteGroupDialog(false)} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-[#a0a0a8]" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>Annulla</button>
+                  <button onClick={handleDeleteGroup} disabled={actionLoading} className="flex-1 py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2" style={{ background: "rgba(249,115,22,0.15)", border: "1px solid rgba(249,115,22,0.25)", color: "#f97316" }}>
+                    {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Trash2 className="h-4 w-4" />Elimina tutto</>}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </ProtectedRoute>
   );
 }
